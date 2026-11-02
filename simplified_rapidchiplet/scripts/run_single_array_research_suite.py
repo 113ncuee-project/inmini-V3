@@ -20,10 +20,14 @@ def main():
     parser.add_argument('--snapshot', required=True)
     parser.add_argument('--out', required=True)
     parser.add_argument('--queries', type=int, default=128)
-    parser.add_argument('--seconds', type=float, default=3600.)
-    parser.add_argument('--eval-timeout', type=float, default=300.)
+    parser.add_argument('--seconds', type=float, default=7200.)
+    parser.add_argument('--eval-timeout', type=float, default=1800.)
     parser.add_argument('--toy-queries', type=int, default=64)
     parser.add_argument('--toy-seconds', type=float, default=600.)
+    parser.add_argument('--seed-seconds', type=float, default=7200.)
+    parser.add_argument('--seed-queries', type=int, default=16)
+    parser.add_argument('--seed-dp-seconds', type=float, default=120.)
+    parser.add_argument('--models', default='resnet18,resnet50,mobilenet_v2')
     parser.add_argument('--skip-fusion-off', action='store_true')
     args = parser.parse_args()
     snapshot, output = Path(args.snapshot).resolve(), Path(args.out).resolve()
@@ -53,7 +57,7 @@ def main():
             power.argtypes, power.restype = [ctypes.c_uint], ctypes.c_uint
             state['temporary_system_awake_request'] = bool(power(0x80000001))
         cases = [('toy', 'fusion_on')]
-        for model in ('resnet18', 'resnet50', 'mobilenet_v2'):
+        for model in args.models.split(','):
             cases.append((model, 'fusion_on'))
             if not args.skip_fusion_off:
                 cases.append((model, 'fusion_off'))
@@ -70,7 +74,8 @@ def main():
                 seconds = args.toy_seconds if model == 'toy' else args.seconds
                 arms = 'random,greedy,atomic_rl,bottleneck_rl' if mode == 'fusion_on' else 'bottleneck_rl'
                 command = [sys.executable, '-X', 'utf8', str(snapshot / 'single_array_dse.py'),
-                    '--model', model, '--seed', '7', '--preference', 'balanced', '--seed-method', 'tangram_style_v02',
+                    '--model', model, '--engine', 'v03', '--seed-seconds', str(min(args.seed_seconds,120.) if model=='toy' else args.seed_seconds),
+                    '--seed-queries', str(args.seed_queries), '--seed-dp-seconds', str(args.seed_dp_seconds), '--shortlist', '64', '--seed', '7', '--preference', 'balanced', '--seed-method', 'tangram_style_v02',
                     '--queries', str(queries), '--seconds', str(seconds), '--eval-timeout', str(args.eval_timeout),
                     '--fusion', 'on' if mode == 'fusion_on' else 'off', '--arms', arms, '--out', str(case_output)]
                 if (case_output / 'source_identity.json').exists():

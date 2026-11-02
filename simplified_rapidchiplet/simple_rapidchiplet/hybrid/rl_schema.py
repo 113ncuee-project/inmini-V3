@@ -23,7 +23,7 @@ COMPOSITE_ACTIONS = tuple(f"C{index}" for index in range(1, 11))
 def canonical_action_id(action_id: str) -> str:
     value = str(action_id).upper()
     value = "A9" if value == "A11" else value
-    if value not in ATOMIC_ACTIONS:
+    if value not in (*ATOMIC_ACTIONS, "A12"):
         raise ValueError(f"unknown atomic action {action_id}")
     return value
 
@@ -113,7 +113,7 @@ class ActionPlan:
 
     def __post_init__(self):
         family = "A9" if self.family_id == "A11" else self.family_id
-        if family not in (*ATOMIC_ACTIONS, *COMPOSITE_ACTIONS):
+        if family not in (*ATOMIC_ACTIONS, "A12", *COMPOSITE_ACTIONS):
             raise ValueError(f"unknown action family {family}")
         if not self.ordered_edits:
             raise ValueError("action plan requires explicit ordered edits")

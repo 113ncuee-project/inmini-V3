@@ -37,7 +37,7 @@ class SingleArrayOraclePool(BoundedOraclePool):
         index = len(self.records)
         try:
             result = self.request('evaluate', deadline=end, architecture=candidate.id,
-                hardware=asdict(candidate.hardware), mapping=plan.to_dict(), phase=phase,
+                hardware=asdict(candidate.hardware), hardware_profile=candidate.hardware.profile_id, mapping=plan.to_dict(), phase=phase,
                 worker_timeout_s=min(self.evaluation_timeout_s, max(0., end - time.monotonic())))
             if len(self.records) > index:
                 self.records[index]['ppa_feasible'] = result['metrics']['feasible']
@@ -69,7 +69,7 @@ class SingleArrayOraclePool(BoundedOraclePool):
 def worker(folder):
     from .search import plan_from_dict
     from .single_array_evaluator import SingleArrayEvaluator
-    from .single_array_hardware import ExperimentalAssumptions, SingleArrayHardware
+    from .single_array_hardware import ExperimentalAssumptions, SingleArrayHardware, SingleArrayHardwareV3, PROFILE_V3
     folder = Path(folder)
     with (folder / 'workload.pkl').open('rb') as stream:
         workload = pickle.load(stream)
@@ -88,7 +88,8 @@ def worker(folder):
                     a['l2_gateway_pes'] = tuple(a['l2_gateway_pes'])
                     a['vector_cycles_per_element'] = tuple(tuple(row) for row in a['vector_cycles_per_element'])
                     data['assumptions'] = ExperimentalAssumptions(**a)
-                    evaluators[key] = SingleArrayEvaluator(workload, SingleArrayHardware(**data))
+                    hardware_class = SingleArrayHardwareV3 if req.get('hardware_profile') == PROFILE_V3 else SingleArrayHardware
+                    evaluators[key] = SingleArrayEvaluator(workload, hardware_class(**data))
                 oracle = evaluators[key]
                 mapping_hash = hashlib.sha256(json.dumps(req['mapping'], sort_keys=True).encode()).hexdigest()
                 oracle.compile_hook = lambda evidence: atomic_json(folder / 'compile_evidence.json',
@@ -106,7 +107,11 @@ def worker(folder):
                     raise ValueError('persist requires the last completed exact evaluation')
                 _, _, result, oracle = last
                 target = Path(req['folder'])
-                atomic_json(target / 'evaluation.json', result.to_dict())
+                compact = oracle.hardware.profile_id == PROFILE_V3
+                artifact = ({'metrics': result.metrics, 'mapping': result.compiled.plan.to_dict(),
+                    'buffer_statistics': result.buffer_statistics, 'diagnostics': result.metrics['diagnostics'],
+                    'detail_scope': 'compact export; bounded diagnostics; full calendar was evaluated'} if compact else result.to_dict())
+                atomic_json(target / 'evaluation.json', artifact)
                 atomic_json(target / 'hardware_profile.json', oracle.hardware.to_dict())
                 atomic_json(target / 'workload.json', workload.to_dict())
                 atomic_json(target / 'config.json', req['config'])

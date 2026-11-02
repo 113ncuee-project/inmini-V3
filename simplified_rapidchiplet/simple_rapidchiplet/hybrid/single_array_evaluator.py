@@ -61,6 +61,9 @@ class SingleArrayEvaluator:
         self.nocs = {f'compute:{die}': build_single_array_noc(self.hardware, die)
                      for die in range(self.hardware.compute_count)}
         self.cache, self.cache_hits, self.evaluations = {}, 0, 0
+        self._path_cache = {}
+        self._package_paths = {}
+        self._link_map = {frozenset((link.source, link.destination)): link for link in self.package.links}
         self.sources = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                         for p in Path(__file__).parent.glob('*.py')}
         self.identity = hashlib.sha256(json.dumps({"workload": workload.fingerprint,
@@ -77,10 +80,14 @@ class SingleArrayEvaluator:
         return 8e-12 * (read * bank['read_pj_per_bit'] + write * bank['write_pj_per_bit'])
 
     def _noc_path(self, slot, direction):
+        key = (slot, direction)
+        if key in self._path_cache:
+            return self._path_cache[key]
         graph = self.nocs[physical_die(slot)]
         gateways = [name for name, _ in graph.coordinates if '/l2_gateway:' in name]
         path = min((graph.route(slot, gateway) for gateway in gateways), key=lambda path: (len(path), path))
-        return path if direction == 'write' else tuple(reversed(path))
+        self._path_cache[key] = path if direction == 'write' else tuple(reversed(path))
+        return self._path_cache[key]
 
     def _local_service(self, slot, amount, direction):
         if amount == 0:
@@ -99,12 +106,18 @@ class SingleArrayEvaluator:
         spec = self.hardware
         source = physical_die(transfer.src)
         destinations = tuple(dict.fromkeys(physical_die(dst) for dst in transfer.dsts))
-        paths = [self.package.route(source, dst) for dst in destinations if dst != source]
+        paths = []
+        for dst in destinations:
+            if dst != source:
+                key = (source, dst)
+                if key not in self._package_paths:
+                    self._package_paths[key] = self.package.route(source, dst)
+                paths.append(self._package_paths[key])
         edges = {(a, b) for path in paths for a, b in zip(path, path[1:])}
         wire = spec.assumptions.wire_bytes(transfer.bytes)
         loads, resources, services = [], [], []
         components = defaultdict(float)
-        link_map = {frozenset((link.source, link.destination)): link for link in self.package.links}
+        link_map = self._link_map
         for a, b in sorted(edges):
             link = link_map[frozenset((a, b))]
             memory = link.kind == 'dram_service'
@@ -355,7 +368,7 @@ class SingleArrayEvaluator:
         energy = sum(energy_components.values())
         executed = sum(u.macs for u in compiled.units)
         stats = compiled.execution_statistics or {}
-        metrics = {'model': workload.name, 'hardware_profile': PROFILE, 'evaluator_identity': self.identity,
+        metrics = {'model': workload.name, 'hardware_profile': spec.profile_id, 'evaluator_identity': self.identity,
             'backend': 'single_array_python_resource_calendar_v1', 'native_rapidchiplet_executed': False,
             'architecture_candidate_id': spec.architecture_id,
             'feasible': not violations, 'executable': not violations, 'violations': violations,
@@ -490,6 +503,7 @@ class SingleArrayEvaluator:
             l1_s = sum(services[u.id].get('l1_service_s', 0.) for u in units)
             relevant = transfers_by_layer[layer.id]
             transfer_wait = sum(waits[t.id] for t in relevant)
+            used_pools = {name for unit in units for name in (unit.physical_die_id, unit.chiplet)}
             evidence = []
             if critical and mac_s >= l1_s and mac_s > 2 * vector_s and mac_s >= pe_wait:
                 evidence.append({'kind': 'compute', 'confidence': 'partial', 'signal': 'critical calendar path, MAC service dominates L1 and VPU'})
@@ -508,6 +522,9 @@ class SingleArrayEvaluator:
                 'criticality': float(critical), 'slack_s': min((slack[n] for n in names if slack[n] is not None), default=None),
                 'pe_utilization': sum(u.macs for u in units) / (compute_s * 256 * self.hardware.compute_clock_hz) if compute_s else 0.,
                 'bottleneck': label, 'bottlenecks': evidence or [{'kind': 'unknown', 'confidence': 'unknown', 'signal': 'insufficient dominant-path evidence'}],
+                'memory_pressure': max((buffers['peak_by_pool'].get(pool, 0) / capacity for pool, capacity in buffers['capacity_by_pool'].items()
+                    if pool.rsplit(':', 1)[0] in used_pools), default=0.),
+                'memory_pressure_scope': 'shared physical pools; not unique per-layer causality',
                 'has_parallelism': math.prod(self.workload.tensor_map[layer.output].shape) > len({u.chiplet for u in units})})
         windows = defaultdict(list)
         for name, rows in loads.items():

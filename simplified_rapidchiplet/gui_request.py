@@ -17,6 +17,9 @@ V2_KEYS={'ui_schema_version','search_mode','workload_mode','budget_mode','fusion
 
 def normalize_request(raw,validate_v1):
     if not isinstance(raw,dict):raise ValueError('設定必須是 JSON object')
+    if raw.get('ui_schema_version') == 4:
+        from gui_request_v4 import normalize_request_v4
+        return normalize_request_v4(raw, validate_v1)
     if raw.get('ui_schema_version') == 3:
         from gui_request_v3 import normalize_request_v3
         return normalize_request_v3(raw, validate_v1)

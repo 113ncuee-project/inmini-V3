@@ -54,7 +54,7 @@ class SingleArrayJointProposals:
         return tuple(groups)
 
     def __call__(self, state, report, plans, stats):
-        if state.version != 2:
+        if state.version < 2:
             raise ValueError('v0.2 joint proposals require design schema 2')
         self.calls += 1
         if not self.fusion_enabled:
@@ -143,12 +143,24 @@ class SingleArrayJointProposals:
                     continue
                 evidence['status'] = 'structurally_legal_physical_check_pending'
                 extra.extend((off, on))
+        memory = []
+        if state.version >= 3:
+            from .target_bottleneck import memory_actions
+            for candidate in memory_actions(self.workload, state, report):
+                try:
+                    apply_transaction(self.workload, state, candidate, self.candidates)
+                    memory.append(candidate)
+                except ValueError as error:
+                    rejected['memory_transaction:' + str(error)] += 1
         # Preserve architecture jumps, generic atomic and joint proposals in
         # the same policy pool. A single sampled ActionPlan commits one state.
         jumps = [p for p in plans if any(e.action_id == 'A9' for e in p.ordered_edits)]
+        if state.version >= 3:
+            jumps = jumps[:min(12, self.shortlist // 4)]
         atoms = [p for p in plans if p.family_id.startswith('A') and p not in jumps]
         joint = extra[:min(8, max(0, self.shortlist - len(jumps) - 4))]
-        pool = (*jumps, *atoms[:4], *joint, *plans, *extra)
+        flows = [p for p in atoms if p.family_id == 'A12'][:3] if state.version >= 3 else []
+        pool = (*memory[:4], *flows, *jumps, *atoms[:4], *joint, *plans, *extra)
         valid, seen, kept_extra = [], set(), set()
         excluded = set(stats.get('excluded_state_hashes', ())) | set(stats.get('budget_excluded_state_hashes', ()))
         for plan in pool:
@@ -162,12 +174,12 @@ class SingleArrayJointProposals:
             if len(valid) >= self.shortlist:
                 break
         evidence = {'window': window, 'window_reason': window_reason, 'attempts': attempts, 'rejected': dict(rejected), 'generated': len(extra),
-                    'shortlisted_joint': len(kept_extra), 'elapsed_s': time.monotonic() - started,
+                    'memory_pressure_proposals': len(memory), 'shortlisted_joint': len(kept_extra), 'elapsed_s': time.monotonic() - started,
                     'full_evaluations': 0, 'physical_validity': 'global oracle pending',
                     'domain_truncated': bool(window) and len(attempts) < len(combinations)}
         self.history.append(evidence)
         stats['joint_window'] = evidence
-        for plan in extra:
+        for plan in (*extra, *memory):
             stats['proposed'][plan.family_id] = stats['proposed'].get(plan.family_id, 0) + 1
         stats['selected_families'] = dict(Counter(p.family_id for p in valid))
         return tuple(valid), stats

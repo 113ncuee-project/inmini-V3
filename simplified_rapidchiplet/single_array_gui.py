@@ -17,14 +17,19 @@ def run_suite(config, folder, update=lambda **_: None, *, resume=False):
         raise ValueError('saved v0.2 suite settings differ')
     atomic_json(folder / 'config.json', config)
     objective = make_objective(config)
-    candidates = {c.id: c for c in enumerate_single_array_architectures()}
+    modern = config.get('engine_profile') == 'gui04_v4'
+    from simple_rapidchiplet.hybrid.single_array_hardware import enumerate_single_array_architectures_v3
+    candidates = {c.id: c for c in (enumerate_single_array_architectures_v3() if modern else enumerate_single_array_architectures())}
+    profile = next(iter(candidates.values())).hardware.profile_id
     rows, searches, models = [], {}, {}
     for index, model in enumerate(config['models']):
         update(completed=index, total=len(config['models']), message=f'{model}: preparing v0.2 Batch1 search')
         model_folder = folder / model
         args = SimpleNamespace(model=model, input_size=224, seed=config['seed'],
             queries=config['budget'], seconds=config['max_wall_time_s'], eval_timeout=config['evaluation_timeout_s'],
-            shortlist=48, fusion='on', arms='bottleneck_rl', out=str(model_folder), resume=resume,
+            shortlist=64 if modern else 48, engine='v03' if modern else 'v02',
+            seed_seconds=config.get('seed_wall_time_s', 7200.), seed_queries=config.get('seed_queries',16),
+            seed_dp_seconds=config.get('seed_dp_seconds',120.), fusion='on', arms='bottleneck_rl', out=str(model_folder), resume=resume,
             preference=config['preference'], max_power=config['max_power'], max_area=config['max_area'],
             max_latency_ms=config['max_latency_ms'], soft_limits=False, seed_method='tangram_style_v02')
         try:
@@ -38,8 +43,8 @@ def run_suite(config, folder, update=lambda **_: None, *, resume=False):
                     'cost': archived['cost'], 'constraints': constraints, 'within_limits': constraints['strict_compliant'],
                     'all_targets_met': constraints['all_targets_met'], 'folder': str(model_folder),
                     'hardware_resources': candidates[ident].hardware.resource_totals,
-                    'hardware_profile': PROFILE, 'text_report_file': 'REPORT.md', 'error': None})
-            models[model] = {'profile': PROFILE, 'batch_size': 1, 'source_identity': str(model_folder / 'source_identity.json')}
+                    'hardware_profile': profile, 'text_report_file': 'REPORT.md', 'error': None})
+            models[model] = {'profile': profile, 'batch_size': 1, 'source_identity': str(model_folder / 'source_identity.json')}
         except Exception as error:
             searches[model] = {'status': 'failed', 'error': f'{type(error).__name__}: {error}'}
             rows.append({'model': model, 'architecture': 'no_completed_candidate', 'metrics': {'feasible': False},
@@ -51,7 +56,7 @@ def run_suite(config, folder, update=lambda **_: None, *, resume=False):
     rankable = [row for row in rows if row['metrics'].get('feasible')]
     ranking, recommendation = rank_joint_rows(rankable, config['models'])
     result = {'config': config, 'models': models, 'runs': rows, 'searches': searches,
-              'ranking': ranking, **recommendation, 'chiplet_profile': PROFILE,
+              'ranking': ranking, **recommendation, 'chiplet_profile': profile,
               'weights': PPA_PREFERENCES[config['preference']],
               'report_format': 'text_numeric_tables',
               'interpretation': 'best verified feasible design within finite search budget; uncalibrated analytical model'}

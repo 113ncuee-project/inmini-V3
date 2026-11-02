@@ -202,10 +202,10 @@ def run_suite(config, folder, update=lambda **kwargs:None, *, resume=False):
         effective=saved
     else:
         effective,provenance=normalize_gui_request(config)
-        if provenance['ui_schema_version'] in (2, 3):
+        if provenance['ui_schema_version'] in (2, 3, 4):
             write_json(folder/'requested_ui.json',config)
             write_json(folder/'ui_provenance.json',provenance)
-    if effective.get('engine_profile') == 'gui04_v3':
+    if effective.get('engine_profile') in ('gui04_v3','gui04_v4'):
         from single_array_gui import run_suite as run_single_array_suite
         return run_single_array_suite(effective, folder, update, resume=resume)
     if effective.get('engine_profile')=='gui04_v2':
@@ -260,11 +260,11 @@ def handler_for(app):
         def do_GET(self):
             path = unquote(urlsplit(self.path).path)
             if path == '/api/catalog':
-                from gui_request_v3 import SEARCH_PROFILES_V3
-                from simple_rapidchiplet.hybrid.single_array_hardware import SingleArrayHardware, PROFILE
+                from gui_request_v4 import SEARCH_PROFILES_V4
+                from simple_rapidchiplet.hybrid.single_array_hardware import SingleArrayHardwareV3, PROFILE_V3
                 return self.json_response({'models':['toy',*MODEL_NAMES],'preferences':PPA_PREFERENCES,
-                      'chiplet_profile':PROFILE,'fixed_hardware':SingleArrayHardware(1, 1).to_dict(),
-                      'candidate_counts':list(CHIPLET_COUNTS),'ui_schema_version':3,'search_profiles':SEARCH_PROFILES_V3})
+                      'chiplet_profile':PROFILE_V3,'fixed_hardware':SingleArrayHardwareV3(1, 1).to_dict(),
+                      'candidate_counts':list(range(1,17)),'ui_schema_version':4,'search_profiles':SEARCH_PROFILES_V4})
             if path == '/api/jobs':
                 with app.lock:
                     return self.json_response(list(app.jobs.values()))

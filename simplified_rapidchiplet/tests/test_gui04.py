@@ -39,7 +39,7 @@ class GUI04ContractTests(unittest.TestCase):
             c,p=hybrid_gui.normalize_gui_request(dict(ui_schema_version=2,search_mode=mode,budget_mode='manual',budget=13,seed=17))
             self.assertEqual(c['budget'],13);self.assertEqual(c['seed'],17)
     def test_malformed_intents_are_rejected(self):
-        for change in [dict(ui_schema_version=True),dict(ui_schema_version=4),dict(workload_mode='throughput'),
+        for change in [dict(ui_schema_version=True),dict(ui_schema_version=5),dict(workload_mode='throughput'),
             dict(batch=2),dict(fusion_mode='on'),dict(search_mode='magic'),dict(budget='Auto'),
             dict(budget_mode='manual',budget=True),dict(budget_mode='manual',budget=0),dict(seed=-1),dict(fusion_depth=99)]:
             with self.subTest(change=change),self.assertRaises(ValueError):

@@ -15,7 +15,7 @@ PATTERNS = ('test_single_array*.py', 'test_joint_rl.py', 'test_rl_acceptance.py'
 
 def manifest():
     paths = list((ROOT / 'simple_rapidchiplet' / 'hybrid').glob('*.py'))
-    paths += [ROOT / name for name in ('single_array_dse.py', 'single_array_gui.py', 'gui_request.py', 'gui_request_v3.py', 'hybrid_gui.py')]
+    paths += [ROOT / name for name in ('single_array_dse.py', 'single_array_gui.py', 'gui_request.py', 'gui_request_v3.py', 'gui_request_v4.py', 'hybrid_gui.py')]
     paths += list((ROOT / 'gui').glob('*'))
     for pattern in PATTERNS:
         paths += list((ROOT / 'tests').glob(pattern))

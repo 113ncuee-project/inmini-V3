@@ -209,7 +209,7 @@ class SingleArrayHardware:
     def sram_costs(self):
         # MAC/VPU frequency sensitivity does not create extra SRAM macros.
         # SRAM/NoC remain at a fixed 1GHz M clock; no CDC signoff is claimed.
-        reference = self if self.compute_clock_hz == 1e9 else SingleArrayHardware(self.rows, self.cols, self.assumptions, 1e9)
+        reference = self if self.compute_clock_hz == 1e9 else type(self)(self.rows, self.cols, self.assumptions, 1e9)
         return {name: sram_bank(reference, name) for name in ('WL1', 'AL1', 'OL1', 'WL2', 'AL2', 'OL2')}
 
     @property
@@ -272,7 +272,7 @@ class SingleArrayHardware:
 
     def to_dict(self):
         return {
-            "profile_id": PROFILE, "engine_schema": ENGINE_SCHEMA,
+            "profile_id": self.profile_id, "engine_schema": getattr(self, "engine_schema", ENGINE_SCHEMA),
             "architecture_id": self.architecture_id, "layout": [self.rows, self.cols],
             "compute_clock_hz": self.compute_clock_hz,
             "noc_clock_hz": self.noc_clock_hz, "nop_clock_hz": self.nop_clock_hz, "sram_clock_hz": self.sram_clock_hz,
@@ -319,7 +319,9 @@ class SingleArrayHardware:
 
     @classmethod
     def from_dict(cls, data):
-        if data.get('profile_id') != PROFILE or data.get('engine_schema') != ENGINE_SCHEMA:
+        if data.get('profile_id') == PROFILE_V3 and cls is SingleArrayHardware:
+            return SingleArrayHardwareV3.from_dict(data)
+        if data.get('profile_id') != cls.profile_id or data.get('engine_schema') != getattr(cls, 'engine_schema', ENGINE_SCHEMA):
             raise ValueError('not a supported single-array hardware profile')
         assumptions = dict(data['experimental_assumptions'])
         assumptions.pop('classification', None)
@@ -422,7 +424,7 @@ class SingleArrayCandidate:
 
     def to_dict(self):
         return {'id': self.id, 'hardware': self.hardware.to_dict(),
-                'chiplet_profile': PROFILE, 'resource_totals': self.hardware.resource_totals}
+                'chiplet_profile': self.hardware.profile_id, 'resource_totals': self.hardware.resource_totals}
 
 
 def enumerate_single_array_architectures(compute_counts=COUNTS):
@@ -471,3 +473,22 @@ def build_single_array_noc(spec, die=0):
         coordinates[gateway] = divmod(pe, 4)
         links.append(PhysicalLink(pe_name(pe), gateway, "l2_gateway", f"gateway:{index}", spec.noc_bandwidth_Bps, "l2_gateway"))
     return SingleArrayNetwork(tuple(coordinates.items()), tuple(links))
+
+
+PROFILE_V3 = "chiplet_single_pe_array_v0_3"
+
+@dataclass(frozen=True)
+class SingleArrayHardwareV3(SingleArrayHardware):
+    """Same priced resources, versioned integer-count architecture domain."""
+    profile_id: ClassVar[str] = PROFILE_V3
+    engine_schema: ClassVar[str] = "inmin_single_array_v0_3"
+
+    def __post_init__(self):
+        if type(self.rows) is not int or type(self.cols) is not int or self.rows < 1 or self.cols < 1 or not 1 <= self.compute_count <= 16:
+            raise ValueError("v0.3 requires a complete rectangle with 1..16 Compute dies")
+        if self.compute_clock_hz not in (.5e9, 1e9):
+            raise ValueError("unsupported compute clock")
+
+def enumerate_single_array_architectures_v3():
+    return tuple(SingleArrayCandidate(SingleArrayHardwareV3(rows, count // rows))
+                 for count in range(1, 17) for rows in range(1, count + 1) if count % rows == 0)

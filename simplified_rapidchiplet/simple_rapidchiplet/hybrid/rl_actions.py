@@ -37,7 +37,7 @@ def _has_overlap(workload, layer_ids):
 
 @lru_cache(maxsize=128)
 def _package(spec):
-    if getattr(spec, 'profile_id', None) == 'chiplet_single_pe_array_v0_2':
+    if getattr(spec, 'profile_id', '').startswith('chiplet_single_pe_array_v0_'):
         from .single_array_hardware import build_single_array_package
         return build_single_array_package(spec)
     return build_package(spec)
@@ -49,13 +49,13 @@ def _candidate_map(candidates):
 
 def validate_state(workload, state, architecture_candidates):
     candidates = _candidate_map(architecture_candidates)
-    if state.version not in (1, 2) or state.model_hash != workload.fingerprint:
+    if state.version not in (1, 2, 3) or state.model_hash != workload.fingerprint:
         raise ValueError("design schema/model identity differs")
     if state.architecture_candidate_id not in candidates:
         raise ValueError("unknown legal architecture candidate")
     candidate = candidates[state.architecture_candidate_id]
-    single_array = getattr(candidate.hardware, 'profile_id', None) == 'chiplet_single_pe_array_v0_2'
-    if single_array != (state.version == 2):
+    single_array = getattr(candidate.hardware, 'profile_id', '').startswith('chiplet_single_pe_array_v0_')
+    if single_array != (state.version >= 2) or (single_array and (state.version == 3) != (candidate.hardware.profile_id.endswith('_3'))):
         raise ValueError('hardware profile requires its matching design schema')
     if single_array and (state.hardware_template_version != candidate.hardware.profile_id or
                          workload.batch_size != 1 or state.mapping.microbatch_size != 1):
@@ -183,6 +183,15 @@ def _apply_edit(workload, state, edit, candidates):
         stacks = list(mapping.fusion_stacks)
         stacks[index] = replace(stacks[index], overlap=FLAGS_TO_OVERLAP[flags])
         mapping = replace(mapping, fusion_stacks=tuple(stacks))
+    elif action == "A12":
+        if state.version < 3:
+            raise ValueError("A12 dataflow switching requires schema3")
+        if params['dataflow'] not in ('output_stationary', 'weight_reuse', 'activation_reuse'):
+            raise ValueError("unpriced dataflow")
+        item = mapping.mapping_map[params['layer_id']]
+        if not workload.layer_map[item.layer_id].weight_shape:
+            raise ValueError("dataflow switching requires a MAC layer")
+        mapping = mapping.replace_layer(replace(item, dataflow=params['dataflow']))
     elif action == "A8":
         tensor_id, memory = params["tensor_id"], params["configuration_id"]
         if memory not in (*package.memory_ids, "interleave"):
@@ -225,7 +234,7 @@ def apply_transaction(workload, state, plan, architecture_candidates):
     if plan.base_state_hash != state.fingerprint:
         raise ValueError("stale action plan: base state identity differs")
     candidates = _candidate_map(architecture_candidates)
-    if state.version == 2 and plan.family_id.startswith('C'):
+    if state.version >= 2 and plan.family_id.startswith('C'):
         actions = [edit.action_id for edit in plan.ordered_edits]
         required = {'C1': {'A4'}, 'C2': {'A9'}, 'C3': {'A9'}, 'C4': {'A2'},
                     'C5': {'A8'}, 'C6': {'A10', 'A4', 'A1'}, 'C7': {'A3', 'A7'},
@@ -242,7 +251,7 @@ def apply_transaction(workload, state, plan, architecture_candidates):
     for edit in plan.ordered_edits:
         trial = _apply_edit(workload, trial, edit, candidates)
     validate_state(workload, trial, candidates)
-    if state.version == 2 and plan.family_id in ('C2', 'C3'):
+    if state.version >= 2 and plan.family_id in ('C2', 'C3'):
         source = candidates[state.architecture_candidate_id].hardware.compute_count
         target = candidates[trial.architecture_candidate_id].hardware.compute_count
         if (plan.family_id == 'C2' and target <= source) or (plan.family_id == 'C3' and target >= source):
@@ -483,6 +492,13 @@ def generate_candidates(workload, state, report, architecture_candidates, *, rng
         stats["proposed"][family] = stats["proposed"].get(family, 0) + 1
         return row
 
+    if state.version >= 3:
+        for layer in workload.layers:
+            if layer.weight_shape:
+                for flow in ('output_stationary', 'weight_reuse', 'activation_reuse'):
+                    if flow != state.mapping.mapping_map[layer.id].dataflow:
+                        add('A12', [('A12', {'layer_id': layer.id, 'dataflow': flow})], (layer.id,),
+                            'priced loop-order dataflow switch; MAC count preserved, L1/psum traffic recomputed')
     low_actions = legal_actions(workload, state.mapping, package.memory_ids,
                                 core_ids=package.mapping_core_ids, max_per_operator=max_per_family, rng=rng)
     for low in low_actions:
@@ -527,7 +543,7 @@ def generate_candidates(workload, state, report, architecture_candidates, *, rng
     architectures = sorted(candidates.values(), key=lambda c: (len(_package(c.hardware).mapping_core_ids), c.id))
     index = next(i for i, candidate in enumerate(architectures) if candidate.id == current.id)
     neighbors = [architectures[i] for i in (index - 1, index + 1) if 0 <= i < len(architectures)]
-    if state.version == 2:
+    if state.version >= 2:
         neighbors = [target for target in architectures if target.id != current.id]
     for target in neighbors:
         try:
@@ -536,7 +552,7 @@ def generate_candidates(workload, state, report, architecture_candidates, *, rng
             stats["hard_rejected"][str(error)] = stats["hard_rejected"].get(str(error), 0) + 1
             continue
         edit = ActionEdit("A9", {"architecture_candidate_id": target.id, "mapping": mapping.to_dict()})
-        add("A9", [edit], (target.id,), "any legal v0.2 architecture jump" if state.version == 2 else "neighboring legal hardware template")
+        add("A9", [edit], (target.id,), "any legal v0.2 architecture jump" if state.version >= 2 else "neighboring legal hardware template")
         if proposal == "composite":
             target_core_count = len(_package(target.hardware).mapping_core_ids)
             if target_core_count == len(package.mapping_core_ids):
@@ -705,7 +721,7 @@ def generate_candidates(workload, state, report, architecture_candidates, *, rng
     generic_slots = min(random_quota, shortlist - int(bool(guided)))
     reserved = generic[:max(1, generic_slots)] if generic else []
     selected = list(reserved)
-    if state.version == 2:
+    if state.version >= 2:
         # Reserve direct architecture reachability independently of diagnosis
         # and family caps. The remaining pool retains generic and fusion edits.
         jumps = {}
@@ -713,7 +729,7 @@ def generate_candidates(workload, state, report, architecture_candidates, *, rng
             target = next((edit.parameters['architecture_candidate_id'] for edit in plan.ordered_edits if edit.action_id == 'A9'), None)
             if target is not None:
                 jumps.setdefault(target, plan)
-        jump_rows = list(jumps.values())[:max(0, shortlist - 2)]
+        jump_rows = list(jumps.values())[:max(1, min(shortlist // 4, 12)) if state.version >= 3 else max(0, shortlist - 2)]
         selected = list(dict((plan.id, plan) for plan in (*jump_rows, *reserved[:max(1, shortlist - len(jump_rows) - int(bool(guided)))])).values())
     seen = {plan.id for plan in selected}
     family_counts = Counter()

@@ -67,7 +67,7 @@ def source_identity(workload, candidates):
     sources = {str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()
                for path in sorted((root / 'simple_rapidchiplet' / 'hybrid').glob('*.py'))}
     sources[Path(__file__).name] = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
-    for relative in ('gui_request.py', 'gui_request_v3.py', 'single_array_gui.py', 'hybrid_gui.py', 'gui/app.js', 'gui/index.html'):
+    for relative in ('gui_request.py', 'gui_request_v3.py', 'gui_request_v4.py', 'single_array_gui.py', 'hybrid_gui.py', 'gui/app.js', 'gui/index.html'):
         path = root / relative
         if path.exists():
             sources[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -79,7 +79,7 @@ def source_identity(workload, candidates):
             deps[name] = 'not_installed'
     data = {'sources': sources, 'workload': workload.fingerprint, 'model_source': workload.source,
             'hardware': {c.id: c.hardware.fingerprint for c in candidates},
-            'python': sys.version, 'dependencies': deps, 'profile_id': PROFILE}
+            'python': sys.version, 'dependencies': deps, 'profile_id': candidates[0].hardware.profile_id}
     return {**data, 'identity': stable_hash(data)}
 
 
@@ -155,7 +155,13 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
         else:
             from simple_rapidchiplet.hybrid.models import extract_model
             workload = extract_model(args.model, batch_size=1, input_size=args.input_size)
-        candidates = enumerate_single_array_architectures()
+        modern = getattr(args, 'engine', 'v02') == 'v03'
+        if modern:
+            from simple_rapidchiplet.hybrid.single_array_hardware import enumerate_single_array_architectures_v3
+            candidates = enumerate_single_array_architectures_v3()
+        else:
+            candidates = enumerate_single_array_architectures()
+        profile = candidates[0].hardware.profile_id
         lookup = {c.id: c for c in candidates}
         identity = source_identity(workload, candidates)
         source_path = folder / 'source_identity.json'
@@ -171,7 +177,7 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
         objective = objective_override or make_objective({'preference': args.preference,
             'max_power': args.max_power, 'max_area': args.max_area, 'max_latency_ms': args.max_latency_ms,
             'strict_power': not args.soft_limits, 'strict_area': not args.soft_limits, 'strict_latency': not args.soft_limits})
-        effective = {**vars(args), 'hardware_profile': PROFILE, 'batch_size': 1, 'horizon': 12,
+        effective = {**vars(args), 'hardware_profile': profile, 'batch_size': 1, 'horizon': 12,
                      'render_images': False, 'objective': asdict(objective),
                      'full_query_ceiling_per_arm_including_common_seeds': args.queries,
                      'wall_ceiling_per_arm_including_common_seed_charge_s': args.seconds,
@@ -179,6 +185,13 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
                      'query_accounting': 'completed full PPA includes capacity-invalid schedules; compiler rejections and timeouts separate; all consume wall time',
                      'seed_method': args.seed_method}
         effective['seed_full_query_ceiling'] = min(args.queries, max(1, min(8, math.ceil(args.queries * .20))))
+        if modern:
+            effective['seed_full_query_ceiling'] = min(getattr(args, 'seed_queries', 16), max(1, args.queries // 3))
+            effective['seed_wall_ceiling_s'] = getattr(args, 'seed_seconds', 7200.)
+            effective['search_wall_ceiling_s'] = args.seconds
+            effective['wall_ceiling_per_arm_including_common_seed_charge_s'] = effective['seed_wall_ceiling_s'] + args.seconds
+            effective['seed_method'] = 'capacity_screened_segment_beam_v3'
+            effective['budget_semantics'] = 'independent seed and learning phases; measured seed cost charged to every arm'
         config_path = folder / 'effective_config.json'
         if config_path.exists() and args.resume:
             saved_config = json.loads(config_path.read_text(encoding='utf-8'))
@@ -191,7 +204,7 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
         atomic_json(folder / 'hardware_profile.json', {c.id: c.hardware.to_dict() for c in candidates})
         def make_state(candidate, mapping):
             obj = asdict(objective)
-            return DesignState(candidate.id, mapping, workload.fingerprint, PROFILE, version=2,
+            return DesignState(candidate.id, mapping, workload.fingerprint, profile, version=3 if modern else 2,
                 preferences={key: obj[key] for key in ('latency_weight', 'area_weight', 'power_weight', 'energy_weight')},
                 constraints={key: value for key, value in obj.items() if key.startswith(('max_', 'soft_'))},
                 workload_definition={'batch_size': 1, 'model': workload.name, 'source': workload.source})
@@ -203,14 +216,19 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
         # A9; omitted seed rectangles are recorded, never reported searched.
         seed_candidates = [min([c for c in candidates if c.hardware.compute_count == count],
                                key=lambda c: (abs(c.hardware.rows - c.hardware.cols), c.hardware.rows))
-                           for count in (1, 2, 4, 8, 16)]
-        seed_deadline = time.monotonic() + max(.1, args.seconds * .20 - seed_data['elapsed_s'])
+                           for count in (range(1, 17) if modern else (1, 2, 4, 8, 16))]
+        seed_ceiling = getattr(args, 'seed_seconds', 7200.) if modern else args.seconds * .20
+        seed_deadline = time.monotonic() + max(.1, seed_ceiling - seed_data['elapsed_s'])
         pool = SingleArrayOraclePool(workload, folder / 'seed_worker', deadline=seed_deadline,
                                      evaluation_timeout_s=args.eval_timeout)
         phase_start = time.monotonic()
         seed_proposals = {}
         for candidate in seed_candidates:
-            if args.seed_method == 'tangram_style_v02':
+            if modern:
+                from simple_rapidchiplet.hybrid.single_array_seed_v3 import generate_seeds_v3
+                seed_proposals[candidate.id] = generate_seeds_v3(workload, candidate.hardware,
+                    max_candidates=4, timeout_s=min(getattr(args, 'seed_dp_seconds', 120.), max(.01, seed_deadline - time.monotonic())), update=update, checkpoint=folder / 'seed_dp' / (candidate.id + '.json'))
+            elif args.seed_method == 'tangram_style_v02':
                 seed_proposals[candidate.id] = generate_single_array_seeds(workload, candidate.hardware,
                     max_candidates=3, timeout_s=min(3., max(.01, seed_deadline - time.monotonic())))
             else:
@@ -292,6 +310,7 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
         initial_cost = objective.cost(next(m for s, m in bootstrap if s.fingerprint == initial.fingerprint), reference)
         seed_full = pool.full_evaluations
         summaries = {}
+        search_ceiling = max(.1, args.seconds if modern else args.seconds - seed_data['elapsed_s'])
         for arm in args.arms.split(','):
             arm_folder = folder / arm
             result_file = arm_folder / 'joint_search.json'
@@ -303,7 +322,7 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
                                                    'elapsed_s': time.monotonic() - started})
             checkpoint = arm_folder / 'checkpoint.json'
             prior_elapsed = json.loads(checkpoint.read_text(encoding='utf-8')).get('elapsed_s', 0.) if args.resume and checkpoint.exists() else 0.
-            search_ceiling = max(.1, args.seconds - seed_data['elapsed_s'])
+            search_ceiling = max(.1, args.seconds if modern else args.seconds - seed_data['elapsed_s'])
             remaining = max(.1, search_ceiling - prior_elapsed)
             deadline = time.monotonic() + remaining
             pool = SingleArrayOraclePool(workload, arm_folder / 'worker', deadline=deadline,
@@ -344,7 +363,7 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
             method, proposal = ARMS[arm]
             config = JointSearchConfig(seed=args.seed, budget=max(32, args.queries * 8), max_steps=max(32, args.queries * 8),
                 horizon=12, shortlist=args.shortlist, random_quota=min(12, args.shortlist // 2),
-                method=method, proposal=proposal, checkpoint_every=1, fusion_enabled=args.fusion != 'off',
+                method=method, proposal=proposal, bottleneck_features=getattr(args, 'bottleneck_features', 'on') == 'on', checkpoint_every=1, fusion_enabled=args.fusion != 'off',
                 max_wall_time_s=max(.001, search_ceiling - reserve))
             hook = SingleArrayJointProposals(workload, candidates, shortlist=args.shortlist,
                 fusion_enabled=args.fusion != 'off') if proposal == 'composite' else None
@@ -387,7 +406,7 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
         final_identity = source_identity(workload, candidates)
         if final_identity['identity'] != identity['identity']:
             raise RuntimeError('sources changed during experiment; results must not be compared as a frozen-source suite')
-        lines = ['# INMIN v0.2 實驗結果（文字／數字表格）', '',
+        lines = ['# INMIN ' + ('v0.3' if modern else 'v0.2') + ' 實驗結果（文字／數字表格）', '',
             '本次是分析模型的有限預算驗證；Tangram-style 為本專案的有界 DP/beam adapter，未執行原始 Tangram。不代表晶片實測、全域最佳或統計上確立 RL 優勢。', '',
             '|方法|已完成 PPA（含共用種子）|Policy 更新|最佳成本|相對最佳種子改善 %|Latency µs|Area mm²|Power W|',
             '|---|---:|---:|---:|---:|---:|---:|---:|']
@@ -436,7 +455,7 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
                     len(item['chiplets']), ','.join(str(part[key]) for key in ('b', 'k', 'h', 'w')),
                     len(stack['layer_ids']) if stack else 0, stack['tile_hw'] if stack else '—',
                     stack['overlap'] if stack else '—', '/'.join(item[key] for key in ('input_dram', 'weight_dram', 'output_dram')))) + '|')
-        lines.extend(['', '完整帳本、來源、逐步交易與未評估架構保存在同目錄 JSON；不同完成查詢數／牆鐘截斷不能直接宣稱公平勝出。',
+        lines.extend(['', f'Profile：{profile}；合法架構數 {len(candidates)}；seed實際時間 {seed_data["elapsed_s"]:.3f}s；search階段每方法上限 {search_ceiling:.3f}s。', '', '完整帳本、來源、逐步交易與未評估架構保存在同目錄 JSON；不同完成查詢數／牆鐘截斷不能直接宣稱公平勝出。',
                       '共同 Seed 的已完成 PPA 與耗時對每個方法計費一次；實際唯一 backend 工作量為 Seed worker 加各方法 worker 帳本之和，不將共用 Seed 重複宣稱為實際執行。',
                       '完整且有順序的每層 PE IDs 見 recommendation.json；所有 shortlist 的完整 ordered edits 保存在 gzip JSON，避免把未被選中誤稱為已落敗。',
                       'v0.2 使用新的 Python 顯式網路與資源 calendar evaluator；本新 engine 未執行 native RapidChiplet backend。',
@@ -459,16 +478,21 @@ def main():
     parser.add_argument('--max-latency-ms', type=float)
     parser.add_argument('--soft-limits', action='store_true')
     parser.add_argument('--seed-method', choices=('stripes', 'tangram_style_v02'), default='tangram_style_v02')
-    parser.add_argument('--queries', type=int, default=32)
-    parser.add_argument('--seconds', type=float, default=1800.)
-    parser.add_argument('--eval-timeout', type=float, default=180.)
-    parser.add_argument('--shortlist', type=int, default=48)
+    parser.add_argument('--bottleneck-features', choices=('on','off'), default='on')
+    parser.add_argument('--engine', choices=('v02', 'v03'), default='v03')
+    parser.add_argument('--seed-seconds', type=float, default=7200.)
+    parser.add_argument('--seed-queries', type=int, default=16)
+    parser.add_argument('--seed-dp-seconds', type=float, default=120.)
+    parser.add_argument('--queries', type=int, default=128)
+    parser.add_argument('--seconds', type=float, default=7200.)
+    parser.add_argument('--eval-timeout', type=float, default=1800.)
+    parser.add_argument('--shortlist', type=int, default=64)
     parser.add_argument('--fusion', choices=('on', 'off'), default='on')
     parser.add_argument('--arms', default=','.join(ARMS))
-    parser.add_argument('--out', default='../output/inmin_v02_20261101/toy_development')
+    parser.add_argument('--out', default='../output/inmin_v03_20261102/toy_development')
     parser.add_argument('--resume', action='store_true')
     args = parser.parse_args()
-    if args.queries < 6 or args.seconds < 10 or args.eval_timeout <= 0 or args.shortlist < 4 or any(arm not in ARMS for arm in args.arms.split(',')):
+    if args.seed_seconds <= 0 or args.seed_queries < 1 or args.seed_dp_seconds <= 0 or args.queries < 6 or args.seconds < 10 or args.eval_timeout <= 0 or args.shortlist < 4 or any(arm not in ARMS for arm in args.arms.split(',')):
         parser.error('queries>=6, seconds>=10, positive timeout, shortlist>=4 and known arms required')
     run(args)
 

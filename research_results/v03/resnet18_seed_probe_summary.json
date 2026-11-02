@@ -1,0 +1,92 @@
+[
+  {
+    "source": "preserved_original_integer_stripes",
+    "feasible": true,
+    "latency_s": 0.02266107075390829,
+    "energy_j": 0.026123085590968532,
+    "oracle_s": 28.5,
+    "provenance": {
+      "implementation": "capacity_screened_segment_beam_v3",
+      "reference_zip_sha256": "8fae65512bb780894d8cba5a0f9c6c66f40a9845178e468d435738bde028a57b",
+      "upstream_original_engine_executed": false,
+      "global_optimum": false,
+      "physical_validity": "requires full INMIN oracle",
+      "beam_width": 8,
+      "max_group_layers": 4,
+      "timeout_s": 120.0,
+      "source": "preserved_original_integer_stripes"
+    }
+  },
+  {
+    "source": "capacity_screened_segment_beam",
+    "feasible": true,
+    "latency_s": 0.020557665740234397,
+    "energy_j": 0.017396514363219776,
+    "oracle_s": 41.686999999918044,
+    "provenance": {
+      "implementation": "capacity_screened_segment_beam_v3",
+      "reference_zip_sha256": "8fae65512bb780894d8cba5a0f9c6c66f40a9845178e468d435738bde028a57b",
+      "upstream_original_engine_executed": false,
+      "global_optimum": false,
+      "physical_validity": "requires full INMIN oracle",
+      "beam_width": 8,
+      "max_group_layers": 4,
+      "timeout_s": 120.0,
+      "local_cache_hits": 1368,
+      "local_cache_misses": 444,
+      "capacity_pruned_segments": 576,
+      "prefix_transitions": 7020,
+      "timed_out": false,
+      "source": "capacity_screened_segment_beam",
+      "elapsed_s": 0.6559999999590218
+    }
+  },
+  {
+    "source": "capacity_screened_segment_beam",
+    "feasible": true,
+    "latency_s": 0.020557665740234397,
+    "energy_j": 0.017396514363219776,
+    "oracle_s": 41.42200000002049,
+    "provenance": {
+      "implementation": "capacity_screened_segment_beam_v3",
+      "reference_zip_sha256": "8fae65512bb780894d8cba5a0f9c6c66f40a9845178e468d435738bde028a57b",
+      "upstream_original_engine_executed": false,
+      "global_optimum": false,
+      "physical_validity": "requires full INMIN oracle",
+      "beam_width": 8,
+      "max_group_layers": 4,
+      "timeout_s": 120.0,
+      "local_cache_hits": 1368,
+      "local_cache_misses": 444,
+      "capacity_pruned_segments": 576,
+      "prefix_transitions": 7020,
+      "timed_out": false,
+      "source": "capacity_screened_segment_beam",
+      "elapsed_s": 0.6559999999590218
+    }
+  },
+  {
+    "source": "capacity_screened_segment_beam",
+    "feasible": true,
+    "latency_s": 0.020557665740234397,
+    "energy_j": 0.017396514363219776,
+    "oracle_s": 34.15600000019185,
+    "provenance": {
+      "implementation": "capacity_screened_segment_beam_v3",
+      "reference_zip_sha256": "8fae65512bb780894d8cba5a0f9c6c66f40a9845178e468d435738bde028a57b",
+      "upstream_original_engine_executed": false,
+      "global_optimum": false,
+      "physical_validity": "requires full INMIN oracle",
+      "beam_width": 8,
+      "max_group_layers": 4,
+      "timeout_s": 120.0,
+      "local_cache_hits": 1368,
+      "local_cache_misses": 444,
+      "capacity_pruned_segments": 576,
+      "prefix_transitions": 7020,
+      "timed_out": false,
+      "source": "capacity_screened_segment_beam",
+      "elapsed_s": 0.6559999999590218
+    }
+  }
+]

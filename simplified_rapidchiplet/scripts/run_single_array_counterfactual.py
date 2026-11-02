@@ -53,7 +53,8 @@ def main():
                             data['batch_size'], data['source'])
         if workload.fingerprint != data['fingerprint']:
             raise ValueError('reconstructed workload fingerprint differs')
-        candidates = enumerate_single_array_architectures()
+        from simple_rapidchiplet.hybrid.single_array_hardware import enumerate_single_array_architectures_v3
+        candidates = enumerate_single_array_architectures_v3() if read(run / 'effective_config.json')['hardware_profile'].endswith('_3') else enumerate_single_array_architectures()
         lookup = {item.id: item for item in candidates}
         identity = source_identity(workload, candidates)
         if identity['identity'] != read(run / 'source_identity.json')['identity']:

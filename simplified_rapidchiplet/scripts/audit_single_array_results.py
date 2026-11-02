@@ -65,7 +65,7 @@ def audit_run(folder, snapshot):
               arm + ': artifact export charged as full PPA')
         # Do not infer a duration from process start times; use the cumulative
         # measured ledgers and permit only the documented reporting tail.
-        check(summary['wall_s_including_common_seed_charge'] <= config['seconds'] + 60,
+        check(summary['wall_s_including_common_seed_charge'] <= config['wall_ceiling_per_arm_including_common_seed_charge_s'] + 60,
               arm + ': wall ledger exceeds ceiling plus reporting tail')
         by_state = {}
         for metrics in checkpoint['cache'].values():
@@ -91,6 +91,11 @@ def audit_run(folder, snapshot):
                 payload = path.read_bytes()
                 check(hashlib.sha256(payload).hexdigest() == evidence['sha256'], arm + ': shortlist hash mismatch')
                 check(len(json.loads(gzip.decompress(payload))['plans']) == row['candidate_count'], arm + ': shortlist count mismatch')
+            if row.get('candidate_probabilities') is not None:
+                probs = row['candidate_probabilities']
+                check(len(probs) == row['candidate_count'], arm + ': probability vector size mismatch')
+                near(sum(probs), 1., arm + ': probability sum mismatch')
+                check(len(row['observation']['state_features']) == 24 and len(row['observation']['selected_candidate_features']) == 283, arm + ': schema3 feature dimensions')
             if row['valid']:
                 before = by_state.get(row['before_state_hash'])
                 after = row['current_metrics']
@@ -203,13 +208,14 @@ def main():
             writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
             writer.writeheader()
             writer.writerows(rows)
-    lines = ['# INMIN v0.2 研究結果（持續更新）', '',
+    modern = any(row['output'] and read(Path(row['output'])/'effective_config.json')['hardware_profile'].endswith('_3') for row in rows)
+    lines = ['# INMIN ' + ('v0.3' if modern else 'v0.2') + ' 研究結果（持續更新）', '',
         '更新 UTC：' + datetime.now(timezone.utc).isoformat(), '',
         '本檔只呈現已完成並審計的實驗；整個研究尚未完成時，不把部分結果當成最終結論。報告僅文字與數字表格。', '',
         '來源 snapshot：`' + manifest['identity'] + '`。新 profile 每 Compute 16PE、L1 2.75MiB、共享L2 1MiB、無實體Core/額外UB；Batch1、Seed7、balanced、無外加PPA硬限制。', '',
         '新 oracle 是 Python 顯式網路/資源 calendar，沒有執行 native RapidChiplet。PPA 未校準，不是晶片量測或timing signoff。舊硬體結果不混入本表。', '',
         '## 完整模型與搜尋對照', '',
-        '正式上限：三模型每方法128次完整PPA、3600秒；Toy為64次、600秒。初始化成本向各方法計費，timeout/reject/export另列帳。相同上限不保證相同完成次數；未達相同完成查詢時，不能以本表單獨宣稱query efficiency勝出。', '',
+        '各case上限與engine版本見effective_config；v0.3 seed與search有獨立時間預算，common seed實際成本仍向各方法計費。Timeout/reject/export另列帳。相同上限不保證相同完成次數；未達相同完成查詢時，不能宣稱query efficiency勝出。', '',
         '|模型|Fusion|方法|Full PPA|Policy更新|Timeout|Wall s|最佳成本|種子後改善 %|Latency ms|Area mm²|Power W|',
         '|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|']
     for row in rows:
@@ -271,7 +277,7 @@ def main():
                   delta.get('dram_read_bytes'), delta.get('executed_macs')]
         lines.append('|' + '|'.join('not_run' if value is None else f'{value:.9g}' if isinstance(value, float) else str(value) for value in values) + '|')
     lines.extend(['', '## 證據與限制', '',
-        '已通過103項固定來源驗收（舊版回歸亦包含）。獨立審計檢查P×T=E、energy分項總和、reward物理差值、機率/shortlist hash、query/export/timeout帳本、PE資源與來源hash；詳細結果見audit.json。審計完成不代表尚在排隊的實驗已完成。', '',
+        ('已通過112項來源穩定驗收（含50布局、A12、target features、memory引導與舊回歸）' if modern else '已通過103項固定來源驗收（舊版回歸亦包含）') + '。獨立審計檢查P×T=E、energy分項總和、reward物理差值、機率/shortlist hash、query/export/timeout帳本、PE資源與來源hash；詳細結果見audit.json。審計完成不代表尚在排隊的實驗已完成。', '',
         '所有M/T實值見各case hardware_profile.json；技術設計與修改清單見workspace docs/INMIN_V02_IMPLEMENTATION.md。4×4 PE mesh/four corner gateways、queues/protocol、INT24 rounding/saturation、共同scale Add、16nm成本、DRAM面積/idle、VPU/IO/register proxy均為分析假設。Whole-flow reservation保守，SRAM bank/word-tail、cycle-accurate VC、DDR refresh、量化準確率、實體校準未完成。MAC .024pJ的op/MAC convention有歧義，2×敏感度尚未做。', '',
         '只有Seed7；不能作跨seed統計保證。未實作C10、內部C-panel、standalone BatchNorm；提案Fusion depth≤4。完整per-layer mapping、traffic、深度覆蓋、未選/拒絕/timeout原因與best archive見各case REPORT.md及JSON。', '',
         '最終需分別回答：RL是否在最佳已驗證seed之外找到更好的設計；是否優於同預算Random/Greedy/atomic RL。正式三模型未完成前，兩者均不預設正面答案。'])

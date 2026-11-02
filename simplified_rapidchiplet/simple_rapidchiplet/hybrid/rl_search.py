@@ -30,6 +30,7 @@ STATE_SIZE = 16
 ACTION_SIZE = 86
 STATE_SIZE_V2 = 24
 ACTION_SIZE_V2 = 180
+ACTION_SIZE_V3 = 283
 
 
 def _positive(metrics, key):
@@ -95,6 +96,7 @@ class JointObjective:
 
 @dataclass(frozen=True)
 class JointSearchConfig:
+    bottleneck_features: bool = True
     seed: int = 7
     budget: int = 128
     max_steps: int = 128
@@ -305,7 +307,7 @@ def state_features(state, metrics, reference, objective, candidate, max_cores, e
                                kinds.count("memory") / max(len(kinds), 1),
                                float(episode_progress), objective.cost(metrics, reference),
                                float(bool(layers))]
-    if state.version == 2:
+    if state.version >= 2:
         network = diagnostics.get('network', [])
         memory = diagnostics.get('memory', [])
         resources = metrics.get('resource_busy_s', {})
@@ -323,7 +325,7 @@ def state_features(state, metrics, reference, objective, candidate, max_cores, e
     return np.clip(np.asarray(vector, dtype=np.float64), -8, 8)
 
 
-def candidate_features(state, plans, features, candidates, workload):
+def candidate_features(state, plans, features, candidates, workload, report=None):
     """Stable action embeddings: no candidate index, architecture-ID table,
     random ordering, or hidden heuristic score enters the learned policy.
     """
@@ -352,7 +354,7 @@ def candidate_features(state, plans, features, candidates, workload):
                 cache_delta = [float(params["cache_h"]), float(params["cache_v"])]
             elif edit.action_id == "A4":
                 transfer += params.get("mapping_action", {}).get("core_delta", 0) / max(source_count, 1)
-            elif state.version == 2 and edit.action_id == 'A1' and params.get('operation', 'merge') == 'merge':
+            elif state.version >= 2 and edit.action_id == 'A1' and params.get('operation', 'merge') == 'merge':
                 cache_delta = [float(params.get('cache_h', False)), float(params.get('cache_v', False))]
         targets = [target for target in plan.target_ids if target in workload.layer_map]
         target_work = sum(workload.layer_map[layer].macs_per_sample for layer in set(targets)) / all_macs
@@ -363,7 +365,7 @@ def candidate_features(state, plans, features, candidates, workload):
         # 10 atomic + 9 macro + 16 local + 5x10 state/action interactions + bias.
         vector = np.concatenate((one_hot, macro, local, np.outer(features[1:6], one_hot).ravel(), [1.0]))
         expected_size = ACTION_SIZE
-        if state.version == 2:
+        if state.version >= 2:
             allocations = [allocation for edit in plan.ordered_edits if edit.action_id == 'A4'
                            for allocation in edit.parameters.get('allocations', {}).values()]
             groups = [group for edit in plan.ordered_edits if edit.action_id == 'A10'
@@ -391,6 +393,16 @@ def candidate_features(state, plans, features, candidates, workload):
                         math.prod(tile_fraction) * features[20], k_fraction * features[18], p_fraction * features[16]]
             vector = np.concatenate((vector, np.outer(features[16:], one_hot).ravel(), explicit, physical))
             expected_size = ACTION_SIZE_V2
+        if state.version >= 3:
+            from .target_bottleneck import target_features
+            local_target = target_features(state, plan, (report if report is not None else state.evaluation_report or {}), workload)
+            family = np.concatenate((one_hot, macro))
+            dataflows = np.asarray([float(any(edit.action_id == 'A12' and edit.parameters.get('dataflow') == flow
+                for edit in plan.ordered_edits)) for flow in ('output_stationary', 'weight_reuse', 'activation_reuse')])
+            severity = local_target[[1, 2, 4, 6]]
+            vector = np.concatenate((vector, local_target, np.outer(severity, family).ravel(),
+                                     dataflows, np.outer(severity, dataflows).ravel()))
+            expected_size = ACTION_SIZE_V3
         if len(vector) != expected_size:
             raise RuntimeError(f"candidate feature schema mismatch {len(vector)}")
         vectors.append(np.clip(vector, -8, 8))
@@ -426,13 +438,16 @@ class JointSearchResult:
     def to_dict(self):
         data = {**asdict(self), "best_state": self.best_state.to_dict() if self.best_state else None,
                           "current_state": self.current_state.to_dict(), "closest_state": self.closest_state.to_dict(),
-                          "cache_hits": self.requests - self.evaluations - (getattr(self, 'oracle_timeouts', 0) if self.current_state.version == 2 else 0), "strict_feasible": self.best_state is not None,
+                          "cache_hits": self.requests - self.evaluations - (getattr(self, 'oracle_timeouts', 0) if self.current_state.version >= 2 else 0), "strict_feasible": self.best_state is not None,
                           "terminated": self.status in {"no_legal_nonduplicate_actions", "no_executable_candidates"},
                           "truncated": self.status.endswith("budget_exhausted"),
                           "algorithm": "linear softmax actor-critic; gamma=1; physical difference reward" if self.method == "rl" else self.method,
                           "capabilities": CAPABILITIES}
-        if self.current_state.version == 2:
+        if self.current_state.version >= 2:
             data['oracle_timeouts'] = getattr(self, 'oracle_timeouts', 0)
+        if self.current_state.version >= 3:
+            data['capabilities'] = {**CAPABILITIES, 'A12': {'supported': True, 'scope': 'priced per-layer loop-order dataflow; schema3'}}
+            data['feature_schema'] = 'target_local_v3_283'
         return _jsonable(data)
 
 
@@ -451,7 +466,9 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                      resource_guard=None, reference_metrics=None):
     objective, config = objective or JointObjective(), config or JointSearchConfig()
     candidates = _candidate_map(architecture_candidates)
-    state_size, action_size = (STATE_SIZE_V2, ACTION_SIZE_V2) if initial_state.version == 2 else (STATE_SIZE, ACTION_SIZE)
+    state_size, action_size = (STATE_SIZE_V2, ACTION_SIZE_V2) if initial_state.version >= 2 else (STATE_SIZE, ACTION_SIZE)
+    if initial_state.version >= 3:
+        action_size = ACTION_SIZE_V3
     settings = asdict(config)
     # Cumulative resource ceilings may increase when resuming. The horizon,
     # proposal policy, learning rates and behavior distribution cannot change.
@@ -533,7 +550,7 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
             "elapsed_s": elapsed_before + time.perf_counter() - started,
             "trace": trace, "family_statistics": family_stats, "status": status}
         if proposal_hook is not None:payload['proposal_extension_state']=proposal_hook.state_dict()
-        if initial_state.version == 2:
+        if initial_state.version >= 2:
             payload['timed_out_state_hashes'] = sorted(timed_out_states)
             payload['oracle_timeouts'] = oracle.timeouts
         _atomic_save(checkpoint_path,payload)
@@ -566,13 +583,13 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                 excluded_state_hashes=oracle.invalid_design_hashes, budget_excluded_state_hashes=timed_out_states)
         proposal_duration = time.perf_counter() - proposal_started
         if proposal_hook is not None:
-            if initial_state.version == 2:
+            if initial_state.version >= 2:
                 proposal_stats['excluded_state_hashes'] = sorted(oracle.invalid_design_hashes)
                 proposal_stats['budget_excluded_state_hashes'] = sorted(timed_out_states)
             plans,proposal_stats=proposal_hook(env.current_state,env.current_metrics,plans,proposal_stats)
             proposal_duration=time.perf_counter()-proposal_started
         proposal_elapsed += proposal_duration
-        if initial_state.version == 2:
+        if initial_state.version >= 2:
             for family, count in proposal_stats['proposed'].items():
                 family_stats.setdefault(family, {'proposed': 0, 'selected': 0, 'valid': 0,
                     'improved': 0, 'evaluation_elapsed_s': 0.})['proposed'] += count
@@ -581,7 +598,7 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                       "candidate_generation_stalled" if oracle.invalid_design_hashes else "no_legal_nonduplicate_actions")
             break
         shortlist_evidence = None
-        if initial_state.version == 2:
+        if initial_state.version >= 2:
             # A budget-truncated greedy lookahead must not always evaluate the
             # architecture-reservation prefix before any local candidate.
             plans = list(plans)
@@ -602,7 +619,11 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
         before_state, before_metrics = env.current_state, env.current_metrics
         sf = state_features(before_state, before_metrics, env.reference, objective,
                             candidates[before_state.architecture_candidate_id], max_cores, episode_step / config.horizon)
-        af = candidate_features(before_state, plans, sf, candidates, workload)
+        if initial_state.version >= 3 and not config.bottleneck_features:
+            sf[10:13] = 0.
+            sf[16:] = 0.
+        policy_report = before_metrics if config.bottleneck_features or initial_state.version < 3 else {}
+        af = candidate_features(before_state, plans, sf, candidates, workload, report=policy_report)
         if config.method == "rl":
             probabilities = policy.probabilities(af)
         elif config.method == "random":
@@ -613,7 +634,7 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
             values = []
             lookahead_stop = None
             for plan in plans:
-                if initial_state.version == 2:
+                if initial_state.version >= 2:
                     lookahead_stop = resource_guard(oracle) if resource_guard is not None else None
                     if lookahead_stop:
                         break
@@ -624,7 +645,7 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                 try:
                     metrics, _, _ = oracle.get(trial, config.budget)
                 except TimeoutError:
-                    if initial_state.version != 2:
+                    if initial_state.version < 2:
                         raise
                     timed_out_states.add(trial.fingerprint)
                     lookahead_stop = 'evaluation_timeout_budget_exhausted'
@@ -652,10 +673,20 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                     chosen = index
                     break
         plan = plans[chosen]
+        decision_evidence = {}
+        if initial_state.version >= 3:
+            from .target_bottleneck import target_features
+            decision_evidence = {'observation': {'feature_schema': 'target_local_v3',
+                'bottleneck_features_enabled': config.bottleneck_features,
+                'state_features': sf.tolist(), 'selected_candidate_features': af[chosen].tolist(),
+                'target_bottleneck_features': target_features(before_state, plan, policy_report, workload).tolist(),
+                'evidence_quality': before_metrics.get('diagnostics', {}).get('evidence_quality', 'unknown')},
+                'candidate_probabilities': probabilities.tolist(),
+                'policy_normalized_entropy': float(-np.dot(probabilities, np.log(np.maximum(probabilities, 1e-300))) / max(math.log(len(probabilities)), 1e-30))}
         attempt_started = time.perf_counter()
         try:step = env.step(plan)
         except TimeoutError as error:
-            if initial_state.version != 2:
+            if initial_state.version < 2:
                 status='evaluation_timeout_budget_exhausted'
                 break
             trial = apply_transaction(workload, before_state, plan, candidates)
@@ -685,6 +716,7 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                 'best_cost': env.best_cost, 'best_metrics': env.best_metrics,
                 'episode_terminated': terminal, 'budget_truncated': False,
                 'evaluation_elapsed_s': duration, 'proposal_elapsed_s': proposal_duration})
+            trace[-1].update(decision_evidence)
             if terminal:
                 reset_state, reset_metrics = bootstrap_evaluations[(steps // config.horizon) % len(bootstrap_evaluations)] if bootstrap_evaluations else (initial_state, initial_metrics)
                 env.current_state, env.current_metrics = reset_state.with_report(reset_metrics), reset_metrics
@@ -704,6 +736,9 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
         next_sf = state_features(env.current_state, env.current_metrics, env.reference, objective,
                                  candidates[env.current_state.architecture_candidate_id], max_cores,
                                  min(episode_step / config.horizon, 1.0))
+        if initial_state.version >= 3 and not config.bottleneck_features:
+            next_sf[10:13] = 0.
+            next_sf[16:] = 0.
         # Invalid execution gives no fictitious PPA/reward and is excluded from
         # physical-cost training. Its rejection remains in the hard-mask log.
         advantage = None
@@ -733,7 +768,8 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                       "best_cost": env.best_cost, "best_metrics": env.best_metrics,
                       "episode_terminated": terminal, "budget_truncated": False,
                       "evaluation_elapsed_s": step.evaluation_elapsed_s, "proposal_elapsed_s": proposal_duration})
-        if initial_state.version == 2:
+        trace[-1].update(decision_evidence)
+        if initial_state.version >= 2:
             trace[-1]['candidate_shortlist'] = shortlist_evidence
         if terminal:
             # Fixed-horizon episodes restart at the same executable Tangram
@@ -756,6 +792,6 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                              policy.updates, status, elapsed_before + time.perf_counter() - started,
                              oracle.elapsed_s, proposal_elapsed, settings, asdict(objective),
                              str(checkpoint_path) if checkpoint_path else None, family_stats)
-    if initial_state.version == 2:
+    if initial_state.version >= 2:
         result.oracle_timeouts = oracle.timeouts
     return result

@@ -123,9 +123,14 @@ def _atomic_demands(demands):
         cuts = [sorted({value for demand in selected for value in demand.region.bounds[axis]})
                 for axis in range(4)]
         ranges = [tuple(zip(axis_cuts[:-1], axis_cuts[1:])) for axis_cuts in cuts]
+        # Exact axis coverage index: avoid checking every demand for every
+        # Cartesian cell. Sorted indices retain the historical multicast order.
+        axis_users = [{span: frozenset(i for i, demand in enumerate(selected)
+                        if demand.region.bounds[axis][0] <= span[0] and span[1] <= demand.region.bounds[axis][1])
+                       for span in ranges[axis]} for axis in range(4)]
         for bounds in product(*ranges):
-            users = [demand for demand in selected if all(lo <= left and right <= hi
-                     for (lo,hi),(left,right) in zip(demand.region.bounds,bounds))]
+            members = set.intersection(*(set(axis_users[axis][span]) for axis, span in enumerate(bounds)))
+            users = [selected[i] for i in sorted(members)]
             if not users:
                 continue
             region = TensorRegion(tuple(bounds))
@@ -153,6 +158,11 @@ def build_communication(workload, compiled: CompiledMapping, collective="multica
         owners.setdefault((unit.output_tensor, unit.microbatch), []).append(unit)
         for req in unit.inputs:
             requirements.setdefault((req.tensor_id, unit.microbatch), []).append((unit, req.region))
+    local_requirements = {}
+    for (tensor, microbatch), values in requirements.items():
+        for unit, region in values:
+            local_requirements.setdefault((tensor, microbatch, unit.chiplet), []).append((unit, region))
+    owner_order = {unit.id: i for i, unit in enumerate(compiled.units)}
     transfers, demands, lifetimes = [], [], []
     writes = {}
     group_map, consumers = plan.group_map, workload.consumers
@@ -172,7 +182,7 @@ def build_communication(workload, compiled: CompiledMapping, collective="multica
                                     owner.output_tensor, region, owner.microbatch)
                 transfers.append(transfer)
                 writes.setdefault(owner.id, []).append((memory, region, transfer.id))
-        users = tuple(dict.fromkeys(unit.id for unit, region in requirements.get((owner.output_tensor, owner.microbatch), ())
+        users = tuple(dict.fromkeys(unit.id for unit, region in local_requirements.get((owner.output_tensor, owner.microbatch, owner.chiplet), ())
                                    if unit.chiplet == owner.chiplet and region.intersection(owner.output_region) is not None))
         lifetimes.append(TensorLifetime(owner.output_tensor, owner.microbatch, owner.chiplet, owner.output_region,
                                        owner.output_bytes, (owner.id,), users))
@@ -187,7 +197,9 @@ def build_communication(workload, compiled: CompiledMapping, collective="multica
                                            unit.microbatch, (), unit.id, "dram_input",reload_cohort=max(0,unit.df_tile)))
                 continue
             covered = 0
-            for owner in owners[(req.tensor_id, unit.microbatch)]:
+            for owner in sorted((unit_map[name] for name in unit.dependencies
+                                 if unit_map[name].output_tensor == req.tensor_id and unit_map[name].microbatch == unit.microbatch),
+                                key=lambda item: owner_order[item.id]):
                 # Recompute creates overlapping generations. Only the compiler's
                 # selected generation may satisfy this consumer's requirement.
                 if owner.id not in unit.dependencies:

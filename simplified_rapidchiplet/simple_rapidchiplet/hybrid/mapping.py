@@ -49,6 +49,7 @@ class TensorRegion:
     def elements(self):
         return math.prod(self.shape)
 
+    @lru_cache(maxsize=65536)
     def intersection(self, other):
         bounds = tuple((max(a, c), min(b, d)) for (a, b), (c, d) in zip(self.bounds, other.bounds))
         return None if any(left >= right for left, right in bounds) else TensorRegion(bounds)
