@@ -5,7 +5,7 @@ INMIN v0.3：每 Compute 16 PE、共享 1 MiB L2、無實體 Core；搜尋 1～1
 - [本輪實作與重現指令](docs/INMIN_V03_IMPLEMENTATION.md)
 - [進度與背景實驗](docs/inmin_v03_progress.md)
 - 程式入口：`simplified_rapidchiplet/single_array_dse.py`；GUI：`simplified_rapidchiplet/hybrid_gui.py`
-- [112項穩定驗收](research_results/v03/acceptance_result.json)
+- [113項穩定驗收](research_results/v03/acceptance_result.json)
 - [R18新起點驗證](research_results/v03/resnet18_seed_probe_summary.json)
 - [v0.2歷史比較報告](research_results/RESEARCH_REPORT.md)，不能當成v0.3結果。
 
@@ -17,7 +17,7 @@ INMIN v0.3：每 Compute 16 PE、共享 1 MiB L2、無實體 Core；搜尋 1～1
 
 ## 已驗證與待完成
 
-112 tests通過且source_stable=true。ResNet18開發probe的新DP起點可行：22.6611→20.5577ms，26.1231→17.3965mJ；這是seed收益，不歸功RL。新版代表模型公平比較仍在背景執行，尚未宣稱v0.3 policy優於對照。
+113 tests通過且source_stable=true。ResNet18開發probe的新DP起點可行：22.6611→20.5577ms，26.1231→17.3965mJ；這是seed收益，不歸功RL。新版代表模型公平比較仍在背景執行，尚未宣稱v0.3 policy優於對照。
 
 PPA為未校準的顯式資源分析；未執行native RapidChiplet、原Tangram完整DSE或Gemini原始評估器，也不是silicon量測。M/T與限制見技術文件。
 

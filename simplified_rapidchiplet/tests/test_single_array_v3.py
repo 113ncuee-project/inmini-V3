@@ -72,6 +72,24 @@ class SingleArrayV3Tests(unittest.TestCase):
         self.assertEqual(blind[0, 186], 0.)
         self.assertNotEqual(vectors[0, 186], blind[0, 186])
 
+    def test_target_wait_retains_severity_without_parallel_sum_clipping(self):
+        from simple_rapidchiplet.hybrid.target_bottleneck import target_features
+        report={'latency_s':1.,'diagnostics':{'layers':[
+            {'layer_id':'conv0','criticality':1.,'mac_service_s':len(self.p.mapping_map['conv0'].chiplets),
+             'transfer_queue_wait_s':10000.,'max_transfer_queue_wait_s':.8},
+            {'layer_id':'conv1','criticality':1.,'mac_service_s':len(self.p.mapping_map['conv1'].chiplets)/2,
+             'transfer_queue_wait_s':20000.,'max_transfer_queue_wait_s':.2}]}}
+        values=[]
+        for lid in ('conv0','conv1'):
+            plan=make_action_plan(self.s,'A12',[('A12',{'layer_id':lid,'dataflow':'weight_reuse'})],targets=(lid,))
+            values.append(target_features(self.s,plan,report,self.w))
+        self.assertAlmostEqual(values[0][4],.8)
+        self.assertAlmostEqual(values[1][4],.2)
+        self.assertAlmostEqual(values[0][1],1.)
+        self.assertAlmostEqual(values[1][1],.5)
+        jump=make_action_plan(self.s,'A9',[('A9',{'architecture_candidate_id':self.cs[-1].id,'mapping':self.p.to_dict()})],targets=(self.cs[-1].id,))
+        self.assertAlmostEqual(target_features(self.s,jump,report,self.w)[4],.8)
+
     def test_memory_pressure_targets_real_stack_and_headroom_allows_C8(self):
         ids = tuple(layer.id for layer in self.w.layers)
         state = replace(self.s, mapping=replace(self.p, fusion_stacks=(FusionStack(ids,(4,4),'full_cache'),)))

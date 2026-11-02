@@ -42,6 +42,8 @@ def target_features(state, plan, report, workload):
     diagnostics = report.get('diagnostics', {})
     targets = set(plan.target_ids).intersection(workload.layer_map)
     for edit in plan.ordered_edits:
+        if edit.action_id == 'A9':
+            targets.update(workload.layer_map)
         targets.update(edit.parameters.get('layer_ids', ()))
         if edit.parameters.get('layer_id'):
             targets.add(edit.parameters['layer_id'])
@@ -49,10 +51,14 @@ def target_features(state, plan, report, workload):
     rows = [row for row in diagnostics.get('layers', ()) if row['layer_id'] in targets]
     maximum = lambda key: max((row.get(key, 0.) or 0. for row in rows), default=0.)
     total = lambda key: sum(row.get(key, 0.) or 0. for row in rows)
+    slots = {slot for lid in targets if lid in state.mapping.mapping_map for slot in state.mapping.mapping_map[lid].chiplets}
+    pes, dies = max(len(slots), 1), max(len({slot.split('/')[0] for slot in slots}), 1)
+    transfer_wait = max((row.get('max_transfer_queue_wait_s', (row.get('transfer_queue_wait_s', 0.) or 0.) / max(row.get('transfer_count', 1), 1)) for row in rows), default=0.)
+    job_wait = max((row.get('max_job_queue_wait_s', (row.get('resource_wait_s', 0.) or 0.) / max(len(row.get('pe_allocations', ())), 1)) for row in rows), default=0.)
     return np.clip(np.asarray([
-        maximum('criticality'), total('mac_service_s') / latency,
-        total('l1_service_s') / latency, total('vector_busy_s') / latency,
-        total('transfer_queue_wait_s') / latency, total('resource_wait_s') / latency,
+        maximum('criticality'), total('mac_service_s') / (latency * pes),
+        total('l1_service_s') / (latency * pes), total('vector_busy_s') / (latency * dies),
+        transfer_wait / latency, job_wait / latency,
         maximum('memory_pressure'), min((row.get('slack_s') or 0. for row in rows), default=0.) / latency,
         sum(workload.layer_map[lid].macs_per_sample for lid in targets if lid in workload.layer_map) / max(workload.total_macs, 1),
         len(targets) / max(len(workload.layers), 1),

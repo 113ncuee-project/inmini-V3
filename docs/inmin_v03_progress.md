@@ -55,3 +55,15 @@ GitHub原發布版已成功推送113ncuee-project/inmini-V3 main commit19402044�
 - 正式comparison：各方法128完整PPA上限、共同seed最多16、seed7200秒+獨立search7200秒、單oracle1800秒。Toy64PPA/search600/seed120秒。最壞需要一天以上，不承諾時間內窮舉或必定改善；所有budget/partial/timeout留證。
 - 不要重複啟動。中斷後同命令執行 source_snapshot/scripts/run_v03_research_workflow.py --snapshot (此snapshot絕對路徑) --out (formal_v3絕對路徑)，會按phase及CLI checkpoint接續。
 - code已具備真正的target observation/候選選擇/交易/完整PPA/reward/policy更新；尚不宣稱新版policy優於對照，需看formal_v3新結果。舊v02結論不可挪用。
+
+## 2026-11-02 16:40 最新可接續版本：formal_v4
+
+實際R18 preflight的target transfer-wait=sum/latency在多個layer飽和8，已保留formal_v3全部資料並停止該次自啟動程序樹22640（已確認taskkill成功）。未覆寫物理PPA，也不把該次policy結果當正式結論。修正為max transfer/job wait / latency，MAC/L1忙碌依目標PE數、VPU依die數正規化；A9觀察整個模型的target evidence。受控0.8/0.2 queue及並行service正規化測試通過。
+
+最終驗收acceptance_final_v6：113 tests、0 failures/errors、source_stable=true、76.281秒。GUI4完成後resume不重算PPA且推薦存在。先前111/112項為較早階段，不能用其來源代替本版。
+
+最新凍結formal_v4/source_snapshot：132檔，identity b8ded693c224b29ef3dd3c19e0a01410d76af37b8f79eccfe21055d76420dd28。workflow session41240，owner PID33136；主狀態formal_v4/workflow_control/workflow_status.json與OS lock。preflight→3模型公平比較/Fusion Off→fixed-mapping pairs→audit。正常運作勿重複啟動；中斷時同參數resume此版本。formal_v1/v2/v3皆保留開發/負面歷史，不再啟動。
+
+使用者要求維持heartbeat排程PAUSED，已遵守；有限背景batch仍按授權執行。若app/主機停止，之後需由使用者手動接續，不會自行恢復排程。
+
+已公開同步程式到GitHub inmini-V3，稍後本次normalization修正再同步。新seed的可行PPA與113項正確性驗證不等於新版RL優勢；最終改善數據須以formal_v4結果為準。

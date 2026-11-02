@@ -277,7 +277,7 @@ def main():
                   delta.get('dram_read_bytes'), delta.get('executed_macs')]
         lines.append('|' + '|'.join('not_run' if value is None else f'{value:.9g}' if isinstance(value, float) else str(value) for value in values) + '|')
     lines.extend(['', '## 證據與限制', '',
-        ('已通過112項來源穩定驗收（含50布局、A12、target features、memory引導與舊回歸）' if modern else '已通過103項固定來源驗收（舊版回歸亦包含）') + '。獨立審計檢查P×T=E、energy分項總和、reward物理差值、機率/shortlist hash、query/export/timeout帳本、PE資源與來源hash；詳細結果見audit.json。審計完成不代表尚在排隊的實驗已完成。', '',
+        ('已通過113項來源穩定驗收（含50布局、A12、target features、memory引導與舊回歸）' if modern else '已通過103項固定來源驗收（舊版回歸亦包含）') + '。獨立審計檢查P×T=E、energy分項總和、reward物理差值、機率/shortlist hash、query/export/timeout帳本、PE資源與來源hash；詳細結果見audit.json。審計完成不代表尚在排隊的實驗已完成。', '',
         '所有M/T實值見各case hardware_profile.json；技術設計與修改清單見workspace docs/INMIN_V02_IMPLEMENTATION.md。4×4 PE mesh/four corner gateways、queues/protocol、INT24 rounding/saturation、共同scale Add、16nm成本、DRAM面積/idle、VPU/IO/register proxy均為分析假設。Whole-flow reservation保守，SRAM bank/word-tail、cycle-accurate VC、DDR refresh、量化準確率、實體校準未完成。MAC .024pJ的op/MAC convention有歧義，2×敏感度尚未做。', '',
         '只有Seed7；不能作跨seed統計保證。未實作C10、內部C-panel、standalone BatchNorm；提案Fusion depth≤4。完整per-layer mapping、traffic、深度覆蓋、未選/拒絕/timeout原因與best archive見各case REPORT.md及JSON。', '',
         '最終需分別回答：RL是否在最佳已驗證seed之外找到更好的設計；是否優於同預算Random/Greedy/atomic RL。正式三模型未完成前，兩者均不預設正面答案。'])

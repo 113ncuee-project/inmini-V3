@@ -676,7 +676,7 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
         decision_evidence = {}
         if initial_state.version >= 3:
             from .target_bottleneck import target_features
-            decision_evidence = {'observation': {'feature_schema': 'target_local_v3',
+            decision_evidence = {'observation': {'feature_schema': 'target_local_v3_normalized_v2',
                 'bottleneck_features_enabled': config.bottleneck_features,
                 'state_features': sf.tolist(), 'selected_candidate_features': af[chosen].tolist(),
                 'target_bottleneck_features': target_features(before_state, plan, policy_report, workload).tolist(),

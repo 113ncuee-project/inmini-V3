@@ -63,3 +63,5 @@ Actor的feature因果消融可在相同候選生成器下使用 `--bottleneck-fe
 新R18 seed probe：提案約0.656秒完整結束，baseline與三個DP proposal均可行。Baseline為22.66107075ms、26.12308559mJ；DP為20.55766574ms、17.39651436mJ。這是起點收益，尚未證明v0.3 RL在最佳seed之外有額外收益。v0.2既有負面RL結果完整保留，不能混入新profile比較。
 
 所有新功能都須經最後來源穩定驗收與新的完整模型search結果後才能宣稱有效。不能用「features已加入」當成「policy已學會正確瓶頸策略」。
+
+最後補充：動態target service以實際PE/die數正規化，queue採實際max wait，避免sum wait在大量tile上飽和。Feature schema為target_local_v3_normalized_v2（283維）。最新113項來源穩定驗收通過，包含0.8/0.2 queue區別與GUI4無額外query的完成續跑。Seed whole-output容量篩選是限制提案域的保守proxy，可能排除實際可pipeline的group；不是不可行性證明，最後PPA仍用完整lifetime oracle。
