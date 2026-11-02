@@ -1,0 +1,201 @@
+{
+  "audit_date": "2026-10-03",
+  "baseline_tests": {
+    "command": "& 'C:\\Users\\user\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m unittest discover -s tests -v",
+    "tests": 29,
+    "failures": 0,
+    "duration_s": 3.45
+  },
+  "model_catalog": [
+    {
+      "name": "resnet18",
+      "blocks": 6,
+      "source": "legacy"
+    },
+    {
+      "name": "resnet50",
+      "blocks": 18,
+      "source": "semantic"
+    },
+    {
+      "name": "shufflenet_v2_x1_0",
+      "blocks": 6,
+      "source": "legacy"
+    },
+    {
+      "name": "shufflenet_v2_x2_0",
+      "blocks": 6,
+      "source": "legacy"
+    },
+    {
+      "name": "mobilenet_v2",
+      "blocks": 9,
+      "source": "semantic"
+    },
+    {
+      "name": "efficientnet_b0",
+      "blocks": 9,
+      "source": "semantic"
+    }
+  ],
+  "probe_model": "resnet18",
+  "probe_groups": [
+    [
+      0,
+      3,
+      2
+    ],
+    [
+      3,
+      6,
+      1
+    ]
+  ],
+  "comparison": {
+    "output_channel": {
+      "compute_latency_ns": 140241228.07017544,
+      "communication_latency_ns": 503513.8,
+      "rapid_latency_ns": 182.63657957244658,
+      "traffic_bits": {
+        "0->1": 32128368.64,
+        "1->2": 3187671.04
+      },
+      "boundary_event": {
+        "kind": "group_boundary",
+        "source_group_index": 0,
+        "destination_group_index": 1,
+        "traffic_bits": 83886.08,
+        "routed_traffic_bits": 83886.08,
+        "pair_count": 2,
+        "bottleneck_link": [
+          0,
+          2
+        ],
+        "bottleneck_link_bits": 83886.08,
+        "max_path": [
+          1,
+          0,
+          2
+        ],
+        "max_path_cycles": 68,
+        "serialization_s": 0.0000016384,
+        "path_latency_s": 3.4e-7,
+        "service_s": 0.0000019784
+      },
+      "power_w": 63.5
+    },
+    "input_channel": {
+      "compute_latency_ns": 146691176.47058824,
+      "communication_latency_ns": 64422.6,
+      "rapid_latency_ns": 204.77124183006538,
+      "traffic_bits": {
+        "0->1": 6459228.16,
+        "1->2": 3187671.04,
+        "1->0": 3187671.04
+      },
+      "boundary_event": {
+        "kind": "group_boundary",
+        "source_group_index": 0,
+        "destination_group_index": 1,
+        "traffic_bits": 83886.08,
+        "routed_traffic_bits": 83886.08,
+        "pair_count": 2,
+        "bottleneck_link": [
+          0,
+          2
+        ],
+        "bottleneck_link_bits": 83886.08,
+        "max_path": [
+          1,
+          0,
+          2
+        ],
+        "max_path_cycles": 68,
+        "serialization_s": 0.0000016384,
+        "path_latency_s": 3.4e-7,
+        "service_s": 0.0000019784
+      },
+      "power_w": 63.5
+    }
+  },
+  "cache_probe": {
+    "returned_same_object": true,
+    "unique_evaluations": 1,
+    "second_requested_strategy": [
+      "input_channel",
+      "single"
+    ],
+    "second_evaluated_strategy": "output_channel"
+  },
+  "boundary_probe": {
+    "expected_output_mb": 0.38,
+    "actual_output_mb": 0.01,
+    "next_group": [
+      3,
+      6,
+      1
+    ]
+  },
+  "network_config_comparison": {
+    "e2e_bandwidth_bits_per_cycle": 256,
+    "rapid_bandwidth_bits_per_cycle": [
+      1929
+    ],
+    "e2e_center_link_lengths_mm": [
+      8.94772697916911
+    ],
+    "rapid_phy_link_lengths_mm": [
+      1.4383972865853973
+    ]
+  },
+  "baseline_commit": "833fb2cc2971e4fdccb3c9b4e8429a88350b746d",
+  "audited_state": "working_tree_including_preexisting_uncommitted_changes",
+  "source_sha256": [
+    {
+      "path": "configs/defaults.json",
+      "sha256": "216918b8eaf45f5ee88d219c69081b7bcf4280cd350f6e9e4e761f73fc22e9a0"
+    },
+    {
+      "path": "configs/models.json",
+      "sha256": "5ad8a1a4c1eacaa35fe8bca8f58991b02ae9c615526fc0c8c6ac0a5000961bfc"
+    },
+    {
+      "path": "simple_rapidchiplet/mapping.py",
+      "sha256": "06d8eaff0514b85d81d9b24c6c44120d2d85158ee999ebb11896f3f9dd73c7c0"
+    },
+    {
+      "path": "simple_rapidchiplet/workload.py",
+      "sha256": "404cec786a519f385fb5b816bf3f67390986f4ea8568a55325b831d880c0f468"
+    },
+    {
+      "path": "simple_rapidchiplet/evaluator.py",
+      "sha256": "fb1c55195cc3c7c223499eb1e5ae8e005f16c1c3b061491041cc17716497a912"
+    },
+    {
+      "path": "simple_rapidchiplet/e2e_latency.py",
+      "sha256": "6b933c3fffc845e90756d7f9e366a0b06a9f3f2cc95fd2066862919faa8c0d01"
+    },
+    {
+      "path": "simple_rapidchiplet/dag_scheduler.py",
+      "sha256": "ac97bb64bb8bee225c6e1d9d32ae6e9e42608e1e9cd80ec245799e291fc1c59d"
+    },
+    {
+      "path": "simple_rapidchiplet/preference_dse.py",
+      "sha256": "9e02f8bb4ac075ae83a47f56d7491df5bea9b0b992f8d47498220541eec953a3"
+    },
+    {
+      "path": "simple_rapidchiplet/rapidchiplet_engine.py",
+      "sha256": "973e8df0a044717795d59061b747a7fa7ca8c43847afaaab67b339aabfb1b865"
+    },
+    {
+      "path": "simple_rapidchiplet/model.py",
+      "sha256": "acdc66f9c459e1de0c06ccfadede017604a2deaedbf9b5590e48f7d5ee8a842b"
+    },
+    {
+      "path": "tests/test_evaluator.py",
+      "sha256": "7996bd57d9b640154d7637b114c2efbfdb055d6a62a8c5b868613f887cc591ca"
+    }
+  ],
+  "probe_description": "Current resnet18 metadata; two disjoint groups; OC and IC directly evaluated with the configured official engine; same group states then evaluated through one EvaluationOracle; mesh link geometry and bandwidth obtained from the configured official module.",
+  "official_engine_root": "C:\\Users\\user\\Downloads\\rapidchiplet-main (2)\\rapidchiplet-main"
+}

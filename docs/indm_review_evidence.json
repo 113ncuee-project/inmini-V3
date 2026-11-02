@@ -1,0 +1,399 @@
+{
+  "date": "2026-10-04",
+  "changes": "review artifacts only; no production or native input edits",
+  "probe_workload": "two 1x1 Conv2d operators, each 32 channels, 2x2 spatial, FP32, all four compute chiplets active",
+  "hardware_sensitivity": {
+    "baseline": {
+      "backend": "official_rapidchiplet",
+      "compute_latency_ns": 213.33333333333334,
+      "total_latency_ns": 531.296008294453,
+      "total_area_mm2": 314.9011361875015,
+      "total_power_w": 86.0,
+      "total_chiplet_power_w": 82.0,
+      "total_link_power_w": 4.0,
+      "architecture_feasible": true,
+      "max_link_utilization": 0.014987266677724981,
+      "congested_link_count": 0,
+      "directed_BW_bits_per_cycle": [
+        1929.0
+      ],
+      "path_cycles": [
+        34.0,
+        62.0
+      ]
+    },
+    "PE_rows_8_to_16": {
+      "backend": "official_rapidchiplet",
+      "compute_latency_ns": 106.66666666666667,
+      "total_latency_ns": 424.62934162778635,
+      "total_area_mm2": 314.9011361875015,
+      "total_power_w": 86.0,
+      "total_chiplet_power_w": 82.0,
+      "total_link_power_w": 4.0,
+      "architecture_feasible": true,
+      "max_link_utilization": 0.018752060162859692,
+      "congested_link_count": 0,
+      "directed_BW_bits_per_cycle": [
+        1929.0
+      ],
+      "path_cycles": [
+        34.0,
+        62.0
+      ]
+    },
+    "SRAM_MiB_16_to_32": {
+      "backend": "official_rapidchiplet",
+      "compute_latency_ns": 213.33333333333334,
+      "total_latency_ns": 531.296008294453,
+      "total_area_mm2": 314.9011361875015,
+      "total_power_w": 86.0,
+      "total_chiplet_power_w": 82.0,
+      "total_link_power_w": 4.0,
+      "architecture_feasible": true,
+      "max_link_utilization": 0.014987266677724981,
+      "congested_link_count": 0,
+      "directed_BW_bits_per_cycle": [
+        1929.0
+      ],
+      "path_cycles": [
+        34.0,
+        62.0
+      ]
+    },
+    "local_native_power_field_20p5_to_1": {
+      "backend": "official_rapidchiplet",
+      "compute_latency_ns": 213.33333333333334,
+      "total_latency_ns": 531.296008294453,
+      "total_area_mm2": 314.9011361875015,
+      "total_power_w": 86.0,
+      "total_chiplet_power_w": 82.0,
+      "total_link_power_w": 4.0,
+      "architecture_feasible": true,
+      "max_link_utilization": 0.014987266677724981,
+      "congested_link_count": 0,
+      "directed_BW_bits_per_cycle": [
+        1929.0
+      ],
+      "path_cycles": [
+        34.0,
+        62.0
+      ]
+    },
+    "proxy_BW_256_to_1": {
+      "backend": "official_rapidchiplet",
+      "compute_latency_ns": 213.33333333333334,
+      "total_latency_ns": 531.296008294453,
+      "total_area_mm2": 314.9011361875015,
+      "total_power_w": 86.0,
+      "total_chiplet_power_w": 82.0,
+      "total_link_power_w": 4.0,
+      "architecture_feasible": true,
+      "max_link_utilization": 0.014987266677724981,
+      "congested_link_count": 0,
+      "directed_BW_bits_per_cycle": [
+        1929.0
+      ],
+      "path_cycles": [
+        34.0,
+        62.0
+      ]
+    },
+    "local_internal_cycles_3_to_300": {
+      "backend": "official_rapidchiplet",
+      "compute_latency_ns": 213.33333333333334,
+      "total_latency_ns": 531.296008294453,
+      "total_area_mm2": 314.9011361875015,
+      "total_power_w": 86.0,
+      "total_chiplet_power_w": 82.0,
+      "total_link_power_w": 4.0,
+      "architecture_feasible": true,
+      "max_link_utilization": 0.014987266677724981,
+      "congested_link_count": 0,
+      "directed_BW_bits_per_cycle": [
+        1929.0
+      ],
+      "path_cycles": [
+        34.0,
+        62.0
+      ]
+    },
+    "local_width_8p798_to_4": {
+      "backend": "official_rapidchiplet",
+      "compute_latency_ns": 213.33333333333334,
+      "total_latency_ns": 531.296008294453,
+      "total_area_mm2": 167.64363392710365,
+      "total_power_w": 86.0,
+      "total_chiplet_power_w": 82.0,
+      "total_link_power_w": 4.0,
+      "architecture_feasible": true,
+      "max_link_utilization": 0.014987266677724981,
+      "congested_link_count": 0,
+      "directed_BW_bits_per_cycle": [
+        1929.0
+      ],
+      "path_cycles": [
+        34.0,
+        62.0
+      ]
+    }
+  },
+  "explicit_validation": {
+    "narrowed_placement_upstream_output": "",
+    "narrowed_placement_independent_AABB_overlaps": [
+      [
+        0,
+        1
+      ],
+      [
+        0,
+        2
+      ],
+      [
+        0,
+        3
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        1,
+        3
+      ],
+      [
+        2,
+        3
+      ]
+    ],
+    "upstream_missed_real_overlap": true,
+    "mesh_plus_diagonal": "\u001b[91mVALIDATION ERROR:\u001b[0m The PHY number 2 of the chiplet with id 0 is used multiple times.\n\u001b[91mVALIDATION ERROR:\u001b[0m The PHY number 0 of the chiplet with id 3 is used multiple times.\nNote that RapidChiplet might produce incorrect results or crash when running with invalid inputs.\n",
+    "note": "Upstream validators print errors, not exceptions. In-memory inputs also bypass automatic read-time validation; a flag alone is insufficient."
+  },
+  "heterogeneous_native_smoke": {
+    "purpose": "API capability smoke test only, with copied generic die costs; not calibrated INDM hardware",
+    "node_types": [
+      "compute",
+      "io",
+      "compute",
+      "memory"
+    ],
+    "routes": [
+      {
+        "pair": [
+          0,
+          2
+        ],
+        "path": [
+          0,
+          1,
+          2
+        ]
+      },
+      {
+        "pair": [
+          3,
+          0
+        ],
+        "path": [
+          3,
+          1,
+          0
+        ]
+      }
+    ],
+    "validation_output": "",
+    "area_summary": {
+      "chip_width": 26.69318093750733,
+      "chip_height": 17.745453958338217,
+      "total_chiplet_area": 309.6000000000001,
+      "total_interposer_area": 473.6826133281277,
+      "time_taken": 0.0
+    },
+    "latency_cycles": {
+      "min": 62,
+      "avg": 62.0,
+      "max": 62,
+      "time_taken": 0.0
+    },
+    "link_bandwidths": {
+      "min": 1929.0,
+      "avg": 1929.0,
+      "max": 1929.0,
+      "histogram": {
+        "1929.0": 3
+      }
+    }
+  },
+  "existing_results_communication_share": {
+    "resnet50_balanced": {
+      "total_latency_ms": 213.35612355106275,
+      "compute_latency_ms": 212.9783466666667,
+      "communication_fraction_percent": 0.17706399896492606,
+      "N_total": 2
+    },
+    "resnet50_latency": {
+      "total_latency_ms": 49.80859514256091,
+      "compute_latency_ms": 48.94288000000001,
+      "communication_fraction_percent": 1.7380838389098994,
+      "N_total": 9
+    },
+    "resnet50_area": {
+      "total_latency_ms": 425.9566933333334,
+      "compute_latency_ms": 425.9566933333334,
+      "communication_fraction_percent": 0.0,
+      "N_total": 1
+    },
+    "resnet50_power": {
+      "total_latency_ms": 425.9566933333334,
+      "compute_latency_ms": 425.9566933333334,
+      "communication_fraction_percent": 0.0,
+      "N_total": 1
+    }
+  },
+  "existing_search_best_discovery": {
+    "resnet50_balanced": {
+      "first_best_episode": 2,
+      "winner_in_initial_uniform_warm_starts": true,
+      "best_weighted_cost": 0.24770246364838358
+    },
+    "resnet50_latency": {
+      "first_best_episode": 9,
+      "winner_in_initial_uniform_warm_starts": true,
+      "best_weighted_cost": 0.2054629278089336
+    }
+  },
+  "existing_search_ablation": [
+    {
+      "mode": "fixed_count_fixed_assignment",
+      "seed": 20260915,
+      "unique_evaluations": 16,
+      "N_total": 1,
+      "total_latency_ns": 425956693.33333343,
+      "total_area_mm2": 77.40000000000002,
+      "total_power_w": 20.5,
+      "weighted_cost": 0.37305678571321604
+    },
+    {
+      "mode": "dynamic_count_fixed_assignment",
+      "seed": 20260915,
+      "unique_evaluations": 64,
+      "N_total": 2,
+      "total_latency_ns": 213356123.55106276,
+      "total_area_mm2": 156.1196590468754,
+      "total_power_w": 42.0,
+      "weighted_cost": 0.24770246364838358
+    },
+    {
+      "mode": "dynamic_count_communication_assignment",
+      "seed": 20260915,
+      "unique_evaluations": 64,
+      "N_total": 2,
+      "total_latency_ns": 213356123.55106276,
+      "total_area_mm2": 156.1196590468754,
+      "total_power_w": 42.0,
+      "weighted_cost": 0.24770246364838358
+    },
+    {
+      "mode": "Q_learning",
+      "seed": 20260915,
+      "unique_evaluations": 64,
+      "N_total": 2,
+      "total_latency_ns": 213356123.55106276,
+      "total_area_mm2": 156.1196590468754,
+      "total_power_w": 42.0,
+      "weighted_cost": 0.24770246364838358
+    }
+  ],
+  "effective_hardware": {
+    "peak_TOPS_per_compute_die": 0.0256,
+    "effective_TOPS_per_compute_die": 0.019200000000000002,
+    "native_chiplet": {
+      "dimensions": {
+        "x": 8.79772697916911,
+        "y": 8.79772697916911
+      },
+      "type": "compute",
+      "phys": [
+        {
+          "x": 0.6441986432926979,
+          "y": 4.398863489584555,
+          "fraction_bump_area": 0.25
+        },
+        {
+          "x": 4.398863489584555,
+          "y": 8.15352833587641,
+          "fraction_bump_area": 0.25
+        },
+        {
+          "x": 8.15352833587641,
+          "y": 4.398863489584555,
+          "fraction_bump_area": 0.25
+        },
+        {
+          "x": 4.398863489584555,
+          "y": 0.6441986432926979,
+          "fraction_bump_area": 0.25
+        }
+      ],
+      "fraction_power_bumps": 0.5,
+      "technology": "tech_1",
+      "power": 20.5,
+      "relay": true,
+      "internal_latency": 3,
+      "unit_count": 8
+    },
+    "native_packaging": {
+      "link_routing": "manhattan",
+      "link_latency_type": "function",
+      "link_latency": "lambda x : 0.25 * x",
+      "link_power_type": "constant",
+      "link_power": 1,
+      "packaging_yield": 0.9,
+      "bump_pitch": 0.05,
+      "non_data_wires": 12,
+      "is_active": true,
+      "latency_irouter": 5,
+      "power_irouter": 0.25,
+      "has_interposer": true,
+      "interposer_technology": "tech_3"
+    }
+  },
+  "source_sha256": {
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\assignment_generator.py": "9633c82a25d91cac6bb81f21d3e2d948ced69082064146e657c99132d855ce23",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\block_extractor.py": "a16a61285bc98bcc34560bb033c629bc0ec24cae299cb4546e3430549b99c44c",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\config.py": "384c087d09bdb0450b171f4fe96d84489bb9504c1c855901dee6d2c7a90d0935",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\dag_scheduler.py": "8852f260ae8eecf9b2b5fb0b9de4c2505f17a4d91a38da526d6ac68bc2221fa5",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\e2e_latency.py": "ad3e6bb8cad5e8847081a04c37e8bf072e4ee51d383a8c76ae4da66d9babaa41",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\evaluator.py": "93d475b2578b44e93915a7345ce75d598e305c1b15a226bef2f51e57d319ac7a",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\flows.py": "da0e9e8d0ff611f46231845de1e2fae6a6c96529fb16f5f4cae14fd05d04b445",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\mapping.py": "c94cec94d4c102948fce003595740bcb4b171cd6fa5c08dcda476db5e0a91f24",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\model.py": "acdc66f9c459e1de0c06ccfadede017604a2deaedbf9b5590e48f7d5ee8a842b",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\model_parser.py": "eb38aca333e1e476db72367cea41d116b913239737079a124dbaadb4094a19d8",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\network_context.py": "04694e8353a92fed228f7e4f0540b212d285f79231f869407c8d2811925a5747",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\network_diagnostics.py": "93a732969b84059f8358ae4483f7be4a9ffd6e246ba2d3c08d2bfdaf4df09356",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\physical_cli.py": "759af3680d4a9d9fc2cec2fdbaa2f14411cb2b20d06432aba6b32ee6d4e151ee",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\physical_dse.py": "8ac15a677b77cde3d5175d70e976e703397f6ea1ac2e89d74141c2bd6015f789",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\physical_evaluator.py": "c8e84d44605806ac2136eef71944fdd1657f839d930b15aa11894f1a95d21257",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\physical_report.py": "bad21cc5820e6aa0925316e05eb3fb23dd0f5823746aabcd93de7ac8312b984d",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\preference_dse.py": "63caa63eaf511b1f18c94774dc8f5937a7ba67a9094d775a12adf7f9d6a9ade4",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\rapidchiplet_engine.py": "94d8d924637c5ad659d3fda22ca14c5068d72957a45e6280c55d52b81a8a3f2b",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\rapid_proxy.py": "ea4b4106c6a13db6c2051a397d4fa807721d00d489f8ee358a3ac0aa354480ab",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\report.py": "5c7c875a0c771db4f12d238c74cdbf37e2afd22f397a4b685533e37da3228286",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\routing.py": "57ec06964aaff09de35ff3e3d6788f17eefb30301a9276f54fb8694e09cbf411",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\tensor_metadata.py": "3ee203ef0cd3fca45605e091c6a203729a98153c7e4430f19e4a97e936885f08",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\tensor_ownership.py": "83d8944029cfff9d5c4cfbe08661fcad2966d6a9e559bee395b3ae5a74bfbb38",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\topology.py": "68080fec46e2733df9a1ad107d98219ec7e1fde6ff8cd1c96d2ff81ae761c966",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\toy_model.py": "c961213703d187b0eed50eee08d807c1b2f2c7db39dab5d05fd6219df7451b90",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\traffic_model.py": "9ef96f8c33505c9dcb7f4f5a2e014a61d592ae515f8e41132eeab92dc018dfaf",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\workload.py": "77b452dff8ee6df5214354aa65342ea98e6c77a7e6f4dae769ec7cd0957cc03c",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\__init__.py": "f34bbdb49a17295b5ff319ee10b50a4240f43b1f1a5409a1fa7f0a932c6640d6",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\configs\\defaults.json": "1f922a31adf93d9b48b6e966b06b09f5679b50be4cfdf7e436311a3ed00d8dc2",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\tools\\audit_indm_alignment.py": "da44a146417da83becdb12a17e35b3f5d54f2a88eab03cedf799387cd1a79281",
+    "C:\\Users\\user\\Downloads\\rapidchiplet-main (2)\\rapidchiplet-main\\rapidchiplet.py": "8d4e87aa6426b97ff60ab1c003fd82501b176645daf52d26acc9c56f1f8d1121",
+    "C:\\Users\\user\\Downloads\\rapidchiplet-main (2)\\rapidchiplet-main\\validation.py": "4c7e3633ff40cc0c96e84c6bc98c9050c581d453015ab912bf2588465202ffdc",
+    "C:\\Users\\user\\Downloads\\rapidchiplet-main (2)\\rapidchiplet-main\\helpers.py": "fd0332314566345c70efc62a50b3cfa90f4ab426148102c45ab77256e687f5bc",
+    "C:\\Users\\user\\Downloads\\rapidchiplet-main (2)\\rapidchiplet-main\\inputs\\chiplets\\chiplets_example_experiment.json": "6e0b2307be7901be81856eefa2f1402796a3e72245d1d7d7a87c3b87b988447f",
+    "C:\\Users\\user\\Downloads\\rapidchiplet-main (2)\\rapidchiplet-main\\inputs\\packagings\\example_packaging.json": "746d97ce040537b4ef7b4683d54946eec25305939e87716fb85d6aed8035cdce",
+    "C:\\Users\\user\\Downloads\\rapidchiplet-main (2)\\rapidchiplet-main\\inputs\\technologies\\example_technologies.json": "cdbba5bcc68744e3f9a7aaafee5117d4cf549bdba302d55b9e21602f7e6c5ed2"
+  }
+}

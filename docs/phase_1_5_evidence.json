@@ -1,0 +1,471 @@
+{
+  "phase": "1.5",
+  "date": "2026-10-03",
+  "scope": "correctness repairs only; Phase 2-10 not performed",
+  "environment": {
+    "python": "3.12.14",
+    "executable": "C:\\Users\\user\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe",
+    "packages": {
+      "torch": {
+        "installed": false,
+        "version": null
+      },
+      "torchvision": {
+        "installed": false,
+        "version": null
+      }
+    },
+    "packages_upgraded": false
+  },
+  "reference_model": {
+    "name": "torchvision.models.resnet50",
+    "variant": "ResNet-50 v1.5",
+    "input_shape": [
+      1,
+      3,
+      224,
+      224
+    ],
+    "num_classes": 1000,
+    "activation_precision": "FP32",
+    "weight_precision": "FP32",
+    "activation_bytes_per_element": 4,
+    "weight_bytes_per_element": 4,
+    "initial_input_source": "EXTERNAL",
+    "weights_source": "EXTERNAL"
+  },
+  "reference_metadata_extracted": false,
+  "legacy_models_json_preserved": true,
+  "cache_probe": {
+    "returned_same_object": false,
+    "unique_evaluations": 2,
+    "requested_ic_returned_strategy": "input_channel"
+  },
+  "before": {
+    "output_channel": {
+      "compute_latency_ns": 140241228.07017544,
+      "communication_latency_ns": 503513.8,
+      "rapid_latency_ns": 182.63657957244658,
+      "traffic_bits": {
+        "0->1": 32128368.64,
+        "1->2": 3187671.04
+      },
+      "boundary_event": {
+        "kind": "group_boundary",
+        "source_group_index": 0,
+        "destination_group_index": 1,
+        "traffic_bits": 83886.08,
+        "routed_traffic_bits": 83886.08,
+        "pair_count": 2,
+        "bottleneck_link": [
+          0,
+          2
+        ],
+        "bottleneck_link_bits": 83886.08,
+        "max_path": [
+          1,
+          0,
+          2
+        ],
+        "max_path_cycles": 68,
+        "serialization_s": 1.6384e-06,
+        "path_latency_s": 3.4e-07,
+        "service_s": 1.9784e-06
+      },
+      "power_w": 63.5
+    },
+    "input_channel": {
+      "compute_latency_ns": 146691176.47058824,
+      "communication_latency_ns": 64422.6,
+      "rapid_latency_ns": 204.77124183006538,
+      "traffic_bits": {
+        "0->1": 6459228.16,
+        "1->2": 3187671.04,
+        "1->0": 3187671.04
+      },
+      "boundary_event": {
+        "kind": "group_boundary",
+        "source_group_index": 0,
+        "destination_group_index": 1,
+        "traffic_bits": 83886.08,
+        "routed_traffic_bits": 83886.08,
+        "pair_count": 2,
+        "bottleneck_link": [
+          0,
+          2
+        ],
+        "bottleneck_link_bits": 83886.08,
+        "max_path": [
+          1,
+          0,
+          2
+        ],
+        "max_path_cycles": 68,
+        "serialization_s": 1.6384e-06,
+        "path_latency_s": 3.4e-07,
+        "service_s": 1.9784e-06
+      },
+      "power_w": 63.5
+    }
+  },
+  "after": {
+    "output_channel": {
+      "total_latency_ns": 140249800.5663911,
+      "compute_latency_ns": 140241228.07017544,
+      "communication_latency_ns": 8572.496215655781,
+      "rapid_latency_ns": 239.99999999999997,
+      "power_w": 63.5,
+      "fps": 7.13013491613931,
+      "flows": [
+        {
+          "tensor_id": "layer2:output",
+          "src": 0,
+          "dst": 2,
+          "bytes": 199229.44,
+          "kind": "group_boundary",
+          "source_group_index": 0,
+          "destination_group_index": 1,
+          "producer_block": "layer2",
+          "consumer_block": "layer3",
+          "legacy_kind": ""
+        },
+        {
+          "tensor_id": "layer2:output",
+          "src": 1,
+          "dst": 2,
+          "bytes": 199229.44,
+          "kind": "group_boundary",
+          "source_group_index": 0,
+          "destination_group_index": 1,
+          "producer_block": "layer2",
+          "consumer_block": "layer3",
+          "legacy_kind": ""
+        }
+      ],
+      "events": [
+        {
+          "kind": "group_boundary",
+          "source_group_index": 0,
+          "destination_group_index": 1,
+          "flow_indices": [
+            0,
+            1
+          ],
+          "tensor_ids": [
+            "layer2:output"
+          ],
+          "traffic_bytes": 398458.88,
+          "traffic_bits": 3187671.04,
+          "routed_traffic_bits": 3187671.04,
+          "pair_count": 2,
+          "bottleneck_link": [
+            0,
+            2
+          ],
+          "bottleneck_link_bits": 3187671.04,
+          "bottleneck_bandwidth_bits_per_cycle": 1929.0,
+          "max_path": [
+            1,
+            0,
+            2
+          ],
+          "max_path_cycles": 61.99999999999999,
+          "bandwidth_source": "rapidchiplet_chiplet_packaging_inputs",
+          "path_latency_source": "official_rapidchiplet_per_flow",
+          "serialization_s": 8.262496215655781e-06,
+          "path_latency_s": 3.0999999999999994e-07,
+          "service_s": 8.572496215655781e-06
+        }
+      ],
+      "network_context": {
+        "backend": "official_rapidchiplet",
+        "bandwidth_source": "rapidchiplet_chiplet_packaging_inputs",
+        "path_latency_source": "official_rapidchiplet_per_flow",
+        "frequency_hz": 200000000,
+        "links": [
+          {
+            "src": 0,
+            "dst": 1,
+            "bandwidth_bits_per_cycle": 1929.0
+          },
+          {
+            "src": 0,
+            "dst": 2,
+            "bandwidth_bits_per_cycle": 1929.0
+          },
+          {
+            "src": 1,
+            "dst": 0,
+            "bandwidth_bits_per_cycle": 1929.0
+          },
+          {
+            "src": 2,
+            "dst": 0,
+            "bandwidth_bits_per_cycle": 1929.0
+          }
+        ],
+        "paths": [
+          {
+            "src": 0,
+            "dst": 2,
+            "route": [
+              0,
+              2
+            ],
+            "latency_cycles": 34.0
+          },
+          {
+            "src": 1,
+            "dst": 2,
+            "route": [
+              1,
+              0,
+              2
+            ],
+            "latency_cycles": 61.99999999999999
+          }
+        ]
+      }
+    },
+    "input_channel": {
+      "total_latency_ns": 146708181.46301955,
+      "compute_latency_ns": 146691176.47058824,
+      "communication_latency_ns": 17004.992431311563,
+      "rapid_latency_ns": 204.99999999999997,
+      "power_w": 63.5,
+      "fps": 6.816252440918355,
+      "flows": [
+        {
+          "tensor_id": "layer2:output",
+          "src": 0,
+          "dst": 2,
+          "bytes": 199229.44,
+          "kind": "group_boundary",
+          "source_group_index": 0,
+          "destination_group_index": 1,
+          "producer_block": "layer2",
+          "consumer_block": "layer3",
+          "legacy_kind": ""
+        },
+        {
+          "tensor_id": "layer2:output",
+          "src": 1,
+          "dst": 2,
+          "bytes": 199229.44,
+          "kind": "group_boundary",
+          "source_group_index": 0,
+          "destination_group_index": 1,
+          "producer_block": "layer2",
+          "consumer_block": "layer3",
+          "legacy_kind": ""
+        },
+        {
+          "tensor_id": "layer2:partial_output",
+          "src": 1,
+          "dst": 0,
+          "bytes": 398458.88,
+          "kind": "intra_group_mapping",
+          "source_group_index": 0,
+          "destination_group_index": 0,
+          "producer_block": "layer2",
+          "consumer_block": "layer2",
+          "legacy_kind": "partial_output_reduction"
+        }
+      ],
+      "events": [
+        {
+          "kind": "group_boundary",
+          "source_group_index": 0,
+          "destination_group_index": 1,
+          "flow_indices": [
+            0,
+            1
+          ],
+          "tensor_ids": [
+            "layer2:output"
+          ],
+          "traffic_bytes": 398458.88,
+          "traffic_bits": 3187671.04,
+          "routed_traffic_bits": 3187671.04,
+          "pair_count": 2,
+          "bottleneck_link": [
+            0,
+            2
+          ],
+          "bottleneck_link_bits": 3187671.04,
+          "bottleneck_bandwidth_bits_per_cycle": 1929.0,
+          "max_path": [
+            1,
+            0,
+            2
+          ],
+          "max_path_cycles": 61.99999999999999,
+          "bandwidth_source": "rapidchiplet_chiplet_packaging_inputs",
+          "path_latency_source": "official_rapidchiplet_per_flow",
+          "serialization_s": 8.262496215655781e-06,
+          "path_latency_s": 3.0999999999999994e-07,
+          "service_s": 8.572496215655781e-06
+        },
+        {
+          "kind": "intra_group_mapping",
+          "source_group_index": 0,
+          "destination_group_index": 0,
+          "flow_indices": [
+            2
+          ],
+          "tensor_ids": [
+            "layer2:partial_output"
+          ],
+          "traffic_bytes": 398458.88,
+          "traffic_bits": 3187671.04,
+          "routed_traffic_bits": 3187671.04,
+          "pair_count": 1,
+          "bottleneck_link": [
+            1,
+            0
+          ],
+          "bottleneck_link_bits": 3187671.04,
+          "bottleneck_bandwidth_bits_per_cycle": 1929.0,
+          "max_path": [
+            1,
+            0
+          ],
+          "max_path_cycles": 34.0,
+          "bandwidth_source": "rapidchiplet_chiplet_packaging_inputs",
+          "path_latency_source": "official_rapidchiplet_per_flow",
+          "serialization_s": 8.262496215655781e-06,
+          "path_latency_s": 1.7e-07,
+          "service_s": 8.432496215655781e-06
+        }
+      ],
+      "network_context": {
+        "backend": "official_rapidchiplet",
+        "bandwidth_source": "rapidchiplet_chiplet_packaging_inputs",
+        "path_latency_source": "official_rapidchiplet_per_flow",
+        "frequency_hz": 200000000,
+        "links": [
+          {
+            "src": 0,
+            "dst": 1,
+            "bandwidth_bits_per_cycle": 1929.0
+          },
+          {
+            "src": 0,
+            "dst": 2,
+            "bandwidth_bits_per_cycle": 1929.0
+          },
+          {
+            "src": 1,
+            "dst": 0,
+            "bandwidth_bits_per_cycle": 1929.0
+          },
+          {
+            "src": 2,
+            "dst": 0,
+            "bandwidth_bits_per_cycle": 1929.0
+          }
+        ],
+        "paths": [
+          {
+            "src": 0,
+            "dst": 2,
+            "route": [
+              0,
+              2
+            ],
+            "latency_cycles": 34.0
+          },
+          {
+            "src": 1,
+            "dst": 0,
+            "route": [
+              1,
+              0
+            ],
+            "latency_cycles": 34.0
+          },
+          {
+            "src": 1,
+            "dst": 2,
+            "route": [
+              1,
+              0,
+              2
+            ],
+            "latency_cycles": 61.99999999999999
+          }
+        ]
+      }
+    }
+  },
+  "assumptions": {
+    "latency_policy": "serial",
+    "traffic_source": "canonical flows",
+    "boundary_policy": "legacy equal-pair producer output bytes; not exact K ownership",
+    "precision_applied_to_legacy_MB_metadata": false,
+    "official_bandwidth_source": "official chiplet / packaging input files",
+    "proxy_reference_activity_hz": 15,
+    "proxy_reference_activity_note": "same existing 15 Hz power calibration; never report FPS or a feasibility target",
+    "scheduler_hop_factor": {
+      "classification": "LEGACY_HEURISTIC",
+      "formula": "1 if N_total <= 1 else 1 + N_total.bit_length()/4",
+      "communication_cycles": "output_bytes*8/proxy_bandwidth*hop_factor + proxy_link_base_cycles + configured_PHY_cycles",
+      "reason": "Legacy semantic-block schedule has only volume/group boundaries; actual per-flow backend context is not yet wired into this diagnostic scheduler. Deferred under user Phase 2 / Phase 6 order.",
+      "effect": "schedule task start/finish, critical path and schedule_latency_ns only; no effect on canonical E2E/PPA latency, output FPS, architecture feasibility or reward",
+      "can_replace_with_actual_routing": true,
+      "is_measured_hop_count": false,
+      "regression": "test_scheduler_communication_estimate_does_not_change_search_metrics"
+    },
+    "future_ownership": "operator-level intra/cross-block and residual as required by user; not implemented in Phase 1.5"
+  },
+  "validation": {
+    "unittest": {
+      "passed": true,
+      "tests": 43,
+      "existing_retained": 26,
+      "new_regressions": 17,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "elapsed_s": 9.451,
+      "command": "python -m unittest discover -s tests -v",
+      "cwd": "simplified_rapidchiplet"
+    },
+    "official_engine_test_executed": true,
+    "cli_sweep": {
+      "passed": true,
+      "model": "resnet18",
+      "max_chiplets": 4,
+      "candidates": 15,
+      "out": "simplified_rapidchiplet\\results\\phase_1_5_validation_20261003\\sweep"
+    },
+    "cli_rl": {
+      "passed": true,
+      "model": "resnet50",
+      "budget": 2,
+      "seed": 20261003,
+      "semantic_blocks": 18,
+      "unique_evaluations": 2,
+      "out": "simplified_rapidchiplet\\results\\phase_1_5_validation_20261003\\rl"
+    },
+    "generated_result_checks": {
+      "fps_is_reciprocal_e2e": true,
+      "no_fps_constraint_fields": true,
+      "canonical_equals_e2e_injected_bytes": true
+    },
+    "combined_report": {
+      "passed": true,
+      "legacy_schema_rejected": true,
+      "out": "simplified_rapidchiplet\\results\\phase_1_5_validation_20261003\\combined_report.html"
+    },
+    "scope": "Production test suite and bounded integration smoke; no future-phase physics validation or full DSE sweep",
+    "compileall_passed": true,
+    "git_diff_check_passed": true
+  },
+  "preserved_source_sha256": {
+    "configs/models.json": "5ad8a1a4c1eacaa35fe8bca8f58991b02ae9c615526fc0c8c6ac0a5000961bfc",
+    "simple_rapidchiplet/mapping.py": "06d8eaff0514b85d81d9b24c6c44120d2d85158ee999ebb11896f3f9dd73c7c0",
+    "simple_rapidchiplet/dag_scheduler.py": "ac97bb64bb8bee225c6e1d9d32ae6e9e42608e1e9cd80ec245799e291fc1c59d",
+    "simple_rapidchiplet/model.py": "acdc66f9c459e1de0c06ccfadede017604a2deaedbf9b5590e48f7d5ee8a842b"
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "passed_completed_runs": true,
+  "snapshot_identity": "b0b2cfe73707633dc3515160b21452e7afed0ee390dce0ca94cb4ecb2c5b082c",
+  "snapshot_mismatches": [],
+  "runs": [
+    {
+      "folder": "C:\\Users\\user\\Desktop\\rapidchiplet\\output\\inmin_v02_20261101\\formal_v8\\results\\mobilenet_v2\\fusion_off",
+      "completed_arms": 1,
+      "passed": true,
+      "errors": [],
+      "cached_metrics_checked": 25,
+      "case_status": "completed"
+    },
+    {
+      "folder": "C:\\Users\\user\\Desktop\\rapidchiplet\\output\\inmin_v02_20261101\\formal_v8\\results\\mobilenet_v2\\fusion_on",
+      "completed_arms": 4,
+      "passed": true,
+      "errors": [],
+      "cached_metrics_checked": 151,
+      "case_status": "completed"
+    },
+    {
+      "folder": "C:\\Users\\user\\Desktop\\rapidchiplet\\output\\inmin_v02_20261101\\formal_v8\\results\\resnet18\\fusion_off",
+      "completed_arms": 1,
+      "passed": true,
+      "errors": [],
+      "cached_metrics_checked": 19,
+      "case_status": "completed"
+    },
+    {
+      "folder": "C:\\Users\\user\\Desktop\\rapidchiplet\\output\\inmin_v02_20261101\\formal_v8\\results\\resnet18\\fusion_on",
+      "completed_arms": 4,
+      "passed": true,
+      "errors": [],
+      "cached_metrics_checked": 101,
+      "case_status": "completed"
+    },
+    {
+      "folder": "C:\\Users\\user\\Desktop\\rapidchiplet\\output\\inmin_v02_20261101\\formal_v8\\results\\resnet50\\fusion_off",
+      "completed_arms": 1,
+      "passed": true,
+      "errors": [],
+      "cached_metrics_checked": 18,
+      "case_status": "completed"
+    },
+    {
+      "folder": "C:\\Users\\user\\Desktop\\rapidchiplet\\output\\inmin_v02_20261101\\formal_v8\\results\\resnet50\\fusion_on",
+      "completed_arms": 4,
+      "passed": true,
+      "errors": [],
+      "cached_metrics_checked": 60,
+      "case_status": "completed"
+    },
+    {
+      "folder": "C:\\Users\\user\\Desktop\\rapidchiplet\\output\\inmin_v02_20261101\\formal_v8\\results\\toy\\fusion_on",
+      "completed_arms": 4,
+      "passed": true,
+      "errors": [],
+      "cached_metrics_checked": 256,
+      "case_status": "completed"
+    },
+    {
+      "folder": "C:\\Users\\user\\Desktop\\rapidchiplet\\output\\inmin_v02_20261101\\formal_v8\\snapshot_smoke",
+      "completed_arms": 4,
+      "passed": true,
+      "errors": [],
+      "cached_metrics_checked": 24,
+      "case_status": "completed"
+    }
+  ],
+  "additional_checks": [
+    {
+      "scope": "finite_toy",
+      "states_checked": 380,
+      "pairs_checked": 342,
+      "passed": true,
+      "errors": []
+    },
+    {
+      "scope": "C:\\Users\\user\\Desktop\\rapidchiplet\\output\\inmin_v02_20261101\\formal_v8\\counterfactual_smoke",
+      "passed": true,
+      "errors": [],
+      "extra_full_ppa": 2
+    },
+    {
+      "scope": "C:\\Users\\user\\Desktop\\rapidchiplet\\output\\inmin_v02_20261101\\formal_v8\\counterfactual_toy",
+      "passed": true,
+      "errors": [],
+      "extra_full_ppa": 2
+    }
+  ],
+  "scope": "completed arms only; a containing case may still be running; not a declaration that the research suite is complete"
+}
