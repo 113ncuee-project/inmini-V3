@@ -92,19 +92,61 @@ class BoundedOraclePool:
 
     def close(self):
         if self.process is not None:
-            if self.process.poll() is None:
-                # Windows venv python.exe can be a launcher with a real Python
-                # child. Stop the owned tree, not just that redirector.
-                if os.name=='nt':
-                    subprocess.run(['taskkill','/PID',str(self.process.pid),'/T','/F'],
-                        stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=5,
-                        creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
-                if self.process.poll() is None:self.process.kill()
             if self.process.stdin is not None:
                 try:self.process.stdin.close()
                 except OSError:pass
-            self.process.wait(timeout=5);self.process=None
+            # Idle workers end their stdin loop on EOF. Normal completion must
+            # not depend on a Windows taskkill helper starting within 5 seconds.
+            try:self.process.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                if os.name=='nt':
+                    try:
+                        ended=subprocess.run(['taskkill','/PID',str(self.process.pid),'/T','/F'],
+                            stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=5,
+                            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+                        if ended.returncode and self.process.poll() is None and not self._stop_recorded_windows_worker():
+                            raise RuntimeError('owned oracle tree did not stop; checkpoint preserved')
+                    except (subprocess.TimeoutExpired,OSError):
+                        # A venv launcher and its actual Python are distinct.
+                        # Verify the recorded child's current OS parent before
+                        # using a process handle; never kill an arbitrary PID.
+                        if self.process.poll() is None and not self._stop_recorded_windows_worker():
+                            raise RuntimeError('owned oracle cleanup could not be verified; preserve checkpoint and stop')
+                if self.process.poll() is None:self.process.kill()
+                self.process.wait(timeout=5)
+            self.process=None
         if self.log is not None:self.log.close();self.log=None
+
+    def _stop_recorded_windows_worker(self):
+        import ctypes
+        from ctypes import wintypes
+        try:
+            row=json.loads((self.folder/'worker_started.json').read_text(encoding='utf-8'))
+            if row['worker_pid']==self.process.pid:
+                self.process.kill();self.process.wait(timeout=5);return True
+            if row['parent_pid']!=self.process.pid:return False
+            kernel=ctypes.WinDLL('kernel32',use_last_error=True)
+            kernel.OpenProcess.argtypes=[wintypes.DWORD,wintypes.BOOL,wintypes.DWORD]
+            kernel.OpenProcess.restype=wintypes.HANDLE
+            kernel.CloseHandle.argtypes=[wintypes.HANDLE]
+            kernel.TerminateProcess.argtypes=[wintypes.HANDLE,wintypes.UINT]
+            kernel.WaitForSingleObject.argtypes=[wintypes.HANDLE,wintypes.DWORD]
+            handle=kernel.OpenProcess(0x0401|0x100000,False,row['worker_pid'])
+            if not handle:return ctypes.get_last_error()==87  # already exited
+            try:
+                class BasicInfo(ctypes.Structure):
+                    _fields_=[('reserved1',ctypes.c_void_p),('peb',ctypes.c_void_p),
+                        ('reserved2',ctypes.c_void_p*2),('pid',ctypes.c_size_t),('parent',ctypes.c_size_t)]
+                info=BasicInfo();length=wintypes.ULONG()
+                query=ctypes.WinDLL('ntdll').NtQueryInformationProcess
+                query.argtypes=[wintypes.HANDLE,wintypes.ULONG,ctypes.c_void_p,wintypes.ULONG,ctypes.c_void_p]
+                query.restype=ctypes.c_long
+                if query(handle,0,ctypes.byref(info),ctypes.sizeof(info),ctypes.byref(length))!=0:return False
+                if info.parent!=self.process.pid or info.pid!=row['worker_pid']:return False
+                if kernel.WaitForSingleObject(handle,0)==0:return True
+                return bool(kernel.TerminateProcess(handle,1)) and kernel.WaitForSingleObject(handle,5000)==0
+            finally:kernel.CloseHandle(handle)
+        except (OSError,ValueError,KeyError):return False
 
 def worker(folder):
     from .evaluator import HybridEvaluator

@@ -127,9 +127,17 @@ def schedule_jobs(jobs, *, policy="priority", availability="legacy"):
     """
     if policy not in {"priority", "earliest"}:
         raise ValueError("unknown list scheduling policy")
-    if availability not in {'legacy', 'coalesced'}:
+    if availability == 'auto':
+        from .native_schedule import available
+        availability = 'native' if available() else 'coalesced'
+    if availability == 'native':
+        if policy != 'priority':raise ValueError('native backend implements priority scheduling only')
+        from .native_schedule import native_schedule
+        return native_schedule(jobs)
+    if availability not in {'legacy', 'coalesced', 'indexed'}:
         raise ValueError('unknown calendar availability implementation')
-    slot_finder = _earliest_slot if availability == 'legacy' else _earliest_slot_coalesced
+    from .calendar_index import IndexedCalendar, earliest_indexed
+    slot_finder = {'legacy': _earliest_slot, 'coalesced': _earliest_slot_coalesced, 'indexed': earliest_indexed}[availability]
     jobs = tuple(jobs)
     by_id = {job.id: job for job in jobs}
     if len(by_id) != len(jobs):
@@ -171,7 +179,10 @@ def schedule_jobs(jobs, *, policy="priority", availability="legacy"):
         event = ScheduledJob(job, start, start + job.duration_s)
         for resource in job.resources:
             if job.duration_s:
-                bisect.insort(calendars.setdefault(resource, []), (event.start_s, event.finish_s, name))
+                if availability == 'indexed':
+                    calendars.setdefault(resource, IndexedCalendar()).reserve(event.start_s,event.finish_s,name)
+                else:
+                    bisect.insort(calendars.setdefault(resource, []), (event.start_s, event.finish_s, name))
             busy[resource] = busy.get(resource, 0.0) + job.duration_s
         done[name] = event
         events.append(event)

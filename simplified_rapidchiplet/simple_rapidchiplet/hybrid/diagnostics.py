@@ -24,6 +24,7 @@ def compact_diagnostics(report):
 
 def _schedule_slack(schedule):
     """Latest starts in the actual dependency and resource-order DAG."""
+    if hasattr(schedule,'_cached_slack'):return schedule._cached_slack
     events=schedule.event_map
     predecessors={name:set(e.job.dependencies) for name,e in events.items()}
     calendars=defaultdict(list)

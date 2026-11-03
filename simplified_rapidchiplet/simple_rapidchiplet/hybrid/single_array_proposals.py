@@ -20,7 +20,8 @@ class SingleArrayJointProposals:
     version = 'single_array_joint_window_v1'
 
     def __init__(self, workload, candidates, *, shortlist=48, depth_cap=4, transition_cap=36,
-                 timeout_s=2., fusion_enabled=True):
+                 timeout_s=2., fusion_enabled=True, generator_guidance=True):
+        self.generator_guidance = generator_guidance
         self.workload = workload
         self.candidates = {c.id: c for c in candidates}
         self.shortlist, self.depth_cap, self.transition_cap = shortlist, depth_cap, transition_cap
@@ -57,8 +58,6 @@ class SingleArrayJointProposals:
         if state.version < 2:
             raise ValueError('v0.2 joint proposals require design schema 2')
         self.calls += 1
-        if not self.fusion_enabled:
-            return plans, stats
         started = time.monotonic()
         deadline = min(self.deadline or float('inf'), started + self.timeout_s)
         order = [layer.id for layer in self.workload.layers]
@@ -68,7 +67,7 @@ class SingleArrayJointProposals:
                    if not fused.intersection(order[i:i + depth]) and legal_stack(self.workload, order[i:i + depth])]
         window = windows[(self.calls - 1) % len(windows)] if windows else ()
         window_reason = 'generic deterministic window coverage'
-        layer_evidence = {row['layer_id']: row for row in report.get('diagnostics', {}).get('layers', ())}
+        layer_evidence = {row['layer_id']: row for row in report.get('diagnostics', {}).get('layers', ())} if self.generator_guidance else {}
         if windows and layer_evidence and self.calls % 2:
             def pressure(ids):
                 return sum((row.get('criticality', 0.) or 0.) * (
@@ -135,16 +134,17 @@ class SingleArrayJointProposals:
                     sources=(self.version, 'pair:' + pair, 'DF_on'))
                 try:
                     apply_transaction(self.workload, state, off, self.candidates)
-                    apply_transaction(self.workload, state, on, self.candidates)
+                    if self.fusion_enabled:
+                        apply_transaction(self.workload, state, on, self.candidates)
                 except (ValueError, TypeError, KeyError, IndexError) as error:
                     evidence['status'] = 'structurally_rejected'
                     evidence['reason'] = str(error)
                     rejected[str(error)] += 1
                     continue
                 evidence['status'] = 'structurally_legal_physical_check_pending'
-                extra.extend((off, on))
+                extra.extend((off, on) if self.fusion_enabled else (off,))
         memory = []
-        if state.version >= 3:
+        if state.version >= 3 and self.generator_guidance and self.fusion_enabled:
             from .target_bottleneck import memory_actions
             for candidate in memory_actions(self.workload, state, report):
                 try:
@@ -180,6 +180,8 @@ class SingleArrayJointProposals:
         self.history.append(evidence)
         stats['joint_window'] = evidence
         for plan in (*extra, *memory):
+            legal = stats.setdefault('structurally_legal_by_family', {})
+            legal[plan.family_id] = legal.get(plan.family_id, 0) + 1
             stats['proposed'][plan.family_id] = stats['proposed'].get(plan.family_id, 0) + 1
         stats['selected_families'] = dict(Counter(p.family_id for p in valid))
         return tuple(valid), stats

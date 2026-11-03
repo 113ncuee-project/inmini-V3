@@ -1,0 +1,10 @@
+{
+  "model": "resnet18",
+  "original_case": "C:\\Users\\user\\Desktop\\rapidchiplet\\output\\local_rl_v03_r18\\cases\\resnet18\\7\\methods",
+  "files": {
+    "workload.json": "40695a91d32d66495b524cb99d33f74dd6723c6630d85a50fae937263d3ebd78",
+    "seed_attempts.json": "ef362fecb4020a3794c3ebd62aaf98108e297021f5c01c5896e7185b6517d13f",
+    "source_identity.json": "80db10dd1c0b57e221db1aaa8010d45197daa5fd0727eeae13923f494084443a"
+  },
+  "scope": "unaltered previously completed workload/seed evidence; not a new Tangram execution; seed generation time is historical and separate from replay search"
+}

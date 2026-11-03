@@ -56,6 +56,10 @@ def main():
         from simple_rapidchiplet.hybrid.single_array_hardware import enumerate_single_array_architectures_v3
         candidates = enumerate_single_array_architectures_v3() if read(run / 'effective_config.json')['hardware_profile'].endswith('_3') else enumerate_single_array_architectures()
         lookup = {item.id: item for item in candidates}
+        fixed = read(run / 'effective_config.json').get('fixed_architecture')
+        if fixed:
+            candidates = tuple(c for c in candidates if c.id == fixed)
+            lookup = {item.id: item for item in candidates}
         identity = source_identity(workload, candidates)
         if identity['identity'] != read(run / 'source_identity.json')['identity']:
             raise ValueError('source identity differs from the original experiment')

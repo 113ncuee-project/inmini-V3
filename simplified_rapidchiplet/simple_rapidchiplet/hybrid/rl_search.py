@@ -96,6 +96,8 @@ class JointObjective:
 
 @dataclass(frozen=True)
 class JointSearchConfig:
+    search_space: str = "joint"
+    generator_guidance: bool = True
     bottleneck_features: bool = True
     seed: int = 7
     budget: int = 128
@@ -116,6 +118,9 @@ class JointSearchConfig:
     max_wall_time_s: float | None = None
 
     def __post_init__(self):
+        from .search_space import SPACES
+        if self.search_space not in SPACES:
+            raise ValueError("unknown search space")
         if any(type(value) is not int or value < 1 for value in
                (self.budget, self.max_steps, self.horizon, self.shortlist, self.random_quota,
                 self.max_per_family, self.checkpoint_every, self.max_fusion_depth)):
@@ -182,6 +187,8 @@ class ExactEvaluationCache:
         self.evaluations, self.requests, self.elapsed_s = evaluations, requests, elapsed_s
         self.timeouts = timeouts
         self.oracles = {}
+        self.observer = None
+        self.context = {}
 
     def key(self, state):
         return stable_hash({"design": state.fingerprint,
@@ -192,6 +199,8 @@ class ExactEvaluationCache:
         key = self.key(state)
         if key in self.cache:
             self.requests += 1
+            if self.observer:
+                self.observer(self.context, state, self.cache[key], "cache_hit", 0.)
             return self.cache[key], True, 0.0
         if self.evaluations >= budget:
             return None, False, 0.0
@@ -209,6 +218,8 @@ class ExactEvaluationCache:
         except ValueError as error:
             metrics = {"executable": False, "feasible": False, "reason": str(error)}
         except TimeoutError:
+            if self.observer:
+                self.observer(self.context, state, None, "timeout", time.perf_counter() - started)
             self.timeouts += 1
             self.elapsed_s += time.perf_counter() - started
             raise
@@ -219,12 +230,15 @@ class ExactEvaluationCache:
         self.elapsed_s += elapsed
         self.evaluations += 1
         self.cache[key] = metrics
+        if self.observer:
+            self.observer(self.context, state, metrics, "oracle_response", elapsed)
         return metrics, False, elapsed
 
 
 class JointDesignEnvironment:
     def __init__(self, workload, initial_state, architecture_candidates, evaluator_factory, *,
-                 objective=None, budget=128, evaluator_identity="unspecified", cache=None, reference=None):
+                 objective=None, budget=128, evaluator_identity="unspecified", cache=None, reference=None, search_space="joint"):
+        self.search_space = search_space
         self.workload, self.candidates = workload, _candidate_map(architecture_candidates)
         self.objective, self.budget = objective or JointObjective(), budget
         validate_state(workload, initial_state, self.candidates)
@@ -265,9 +279,13 @@ class JointDesignEnvironment:
         old_state, old_metrics = self.current_state, self.current_metrics
         try:
             trial = apply_transaction(self.workload, old_state, plan, self.candidates)
+            from .search_space import check_transition
+            check_transition(old_state, trial, self.search_space, plan)
         except (ValueError, KeyError, IndexError, TypeError) as error:
             return StepResult(old_state, 0.0, False, False, False, str(error), plan.to_dict(), old_metrics,
                               self.best_state.fingerprint if self.best_state else None)
+        self.oracle.context = {"stage": "selected", "action_plan": plan.to_dict(), "before_state_hash": old_state.fingerprint,
+            "before_cost": self.objective.cost(old_metrics, self.reference), "best_cost_before": self.best_cost}
         metrics, hit, elapsed = self.oracle.get(trial, self.budget)
         if metrics is None:
             return StepResult(old_state, 0.0, False, True, False, "evaluation_budget_exhausted", plan.to_dict(), old_metrics,
@@ -463,7 +481,7 @@ def _atomic_save(path, data):
 def run_joint_search(workload, initial_state, architecture_candidates, evaluator_factory, *,
                      objective=None, config=None, checkpoint_path=None, resume=False,
                      evaluator_identity="unspecified", bootstrap_evaluations=(), proposal_hook=None,
-                     resource_guard=None, reference_metrics=None):
+                     resource_guard=None, reference_metrics=None, recovered_evaluations=(), query_observer=None):
     objective, config = objective or JointObjective(), config or JointSearchConfig()
     candidates = _candidate_map(architecture_candidates)
     state_size, action_size = (STATE_SIZE_V2, ACTION_SIZE_V2) if initial_state.version >= 2 else (STATE_SIZE, ACTION_SIZE)
@@ -516,12 +534,17 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
         timed_out_states = set(saved.get('timed_out_state_hashes', ()))
         if proposal_hook is not None and saved.get('proposal_extension_state'):
             proposal_hook.load_state_dict(saved['proposal_extension_state'])
+    oracle.observer = query_observer
+    # Recover completed physical evidence without inventing a policy update.
+    for state, metrics in recovered_evaluations:
+        validate_state(workload, state, candidates)
+        oracle.cache[oracle.key(state)] = {**_jsonable(metrics), 'design_state_hash': state.fingerprint}
     # On resume constructing the environment reads a known cache entry. Keep
     # accounting identical to uninterrupted execution by removing that read.
     previous_requests = oracle.requests
     env = JointDesignEnvironment(workload, initial_state, candidates, evaluator_factory, objective=objective,
                                  budget=config.budget, evaluator_identity=evaluator_identity, cache=oracle,
-                                 reference=saved["reference"] if saved else reference_metrics)
+                                 reference=saved["reference"] if saved else reference_metrics, search_space=config.search_space)
     initial_metrics = dict(env.current_metrics)
     if bootstrap_evaluations and not saved:
         for state,metrics in bootstrap_evaluations:env.update_archive(state,metrics)
@@ -534,6 +557,8 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
         env.closest_state = DesignState.from_dict(saved["closest_state"])
         env.closest_metrics, env.closest_rank = saved["closest_metrics"], tuple(saved["closest_rank"])
         env.architecture_archive = saved["architecture_archive"]
+    for state, metrics in recovered_evaluations:
+        env.update_archive(state, metrics)
     max_cores = max(len(_package(candidate.hardware).mapping_core_ids) for candidate in candidates.values())
 
     def save(status):
@@ -571,7 +596,8 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
             rng=rng, shortlist=config.shortlist, random_quota=config.random_quota,
             max_per_family=config.max_per_family, proposal=config.proposal,
             fusion_enabled=config.fusion_enabled, max_fusion_depth=config.max_fusion_depth, tile_sizes=config.tile_sizes,
-            excluded_state_hashes=oracle.invalid_design_hashes, budget_excluded_state_hashes=timed_out_states)
+            excluded_state_hashes=oracle.invalid_design_hashes, budget_excluded_state_hashes=timed_out_states,
+            search_space=config.search_space, generator_guidance=config.generator_guidance)
         if not plans and (oracle.invalid_design_hashes or timed_out_states):
             # Retry a broader generic proposal pool before declaring a stalled
             # shortlist. Missing a sample is never reported as proof of no
@@ -580,7 +606,8 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                 rng=rng, shortlist=config.shortlist * 4, random_quota=config.random_quota * 4,
                 max_per_family=config.max_per_family * 4, proposal=config.proposal,
                 fusion_enabled=config.fusion_enabled, max_fusion_depth=config.max_fusion_depth, tile_sizes=config.tile_sizes,
-                excluded_state_hashes=oracle.invalid_design_hashes, budget_excluded_state_hashes=timed_out_states)
+                excluded_state_hashes=oracle.invalid_design_hashes, budget_excluded_state_hashes=timed_out_states,
+            search_space=config.search_space, generator_guidance=config.generator_guidance)
         proposal_duration = time.perf_counter() - proposal_started
         if proposal_hook is not None:
             if initial_state.version >= 2:
@@ -588,6 +615,18 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                 proposal_stats['budget_excluded_state_hashes'] = sorted(timed_out_states)
             plans,proposal_stats=proposal_hook(env.current_state,env.current_metrics,plans,proposal_stats)
             proposal_duration=time.perf_counter()-proposal_started
+        from .search_space import check_transition
+        allowed = []
+        for candidate_plan in plans:
+            try:
+                check_transition(env.current_state, apply_transaction(workload, env.current_state, candidate_plan, candidates), config.search_space, candidate_plan)
+                allowed.append(candidate_plan)
+            except (ValueError, KeyError, IndexError, TypeError) as error:
+                rejects = proposal_stats.setdefault('space_rejected', {})
+                rejects[str(error)] = rejects.get(str(error), 0) + 1
+        plans = tuple(allowed)
+        proposal_stats['search_space'] = config.search_space
+        proposal_stats['generator_guidance'] = config.generator_guidance
         proposal_elapsed += proposal_duration
         if initial_state.version >= 2:
             for family, count in proposal_stats['proposed'].items():
@@ -608,7 +647,10 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                 target = Path(checkpoint_path).parent / 'shortlists' / f'{steps + 1:06d}_{env.current_state.fingerprint[:16]}.json.gz'
                 target.parent.mkdir(parents=True, exist_ok=True)
                 raw = json.dumps({'base_state_hash': env.current_state.fingerprint,
-                    'plans': [plan.to_dict() for plan in plans], 'rng_state_after_proposals': rng.getstate()},
+                    'plans': [plan.to_dict() for plan in plans], 'rng_state_after_proposals': rng.getstate(),
+                    'before_state': replace(env.current_state, evaluation_report=None).to_dict(), 'before_metrics': env.current_metrics,
+                    'state_features': None, 'policy': policy.to_dict(), 'reference': env.reference,
+                    'episode_progress': episode_step / config.horizon},
                     sort_keys=True, ensure_ascii=False, allow_nan=False).encode('utf-8')
                 compressed = gzip.compress(raw, compresslevel=1, mtime=0)
                 temporary = target.with_suffix('.tmp')
@@ -642,6 +684,8 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                         lookahead_stop = 'wall_time_budget_exhausted'
                         break
                 trial = apply_transaction(workload, before_state, plan, candidates)
+                oracle.context = {"stage": "greedy_lookahead", "action_plan": plan.to_dict(), "before_state_hash": before_state.fingerprint,
+                    "before_cost": objective.cost(before_metrics, env.reference), "best_cost_before": env.best_cost}
                 try:
                     metrics, _, _ = oracle.get(trial, config.budget)
                 except TimeoutError:
@@ -673,16 +717,18 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                     chosen = index
                     break
         plan = plans[chosen]
-        decision_evidence = {}
+        decision_evidence = {'search_elapsed_s': elapsed_before + time.perf_counter() - started,
+            'before_metrics': before_metrics, 'completed_evaluations_before': oracle.evaluations,
+            'generator_guidance': config.generator_guidance}
         if initial_state.version >= 3:
             from .target_bottleneck import target_features
-            decision_evidence = {'observation': {'feature_schema': 'target_local_v3_normalized_v2',
+            decision_evidence.update({'observation': {'feature_schema': 'target_local_v3_normalized_v2',
                 'bottleneck_features_enabled': config.bottleneck_features,
                 'state_features': sf.tolist(), 'selected_candidate_features': af[chosen].tolist(),
                 'target_bottleneck_features': target_features(before_state, plan, policy_report, workload).tolist(),
                 'evidence_quality': before_metrics.get('diagnostics', {}).get('evidence_quality', 'unknown')},
                 'candidate_probabilities': probabilities.tolist(),
-                'policy_normalized_entropy': float(-np.dot(probabilities, np.log(np.maximum(probabilities, 1e-300))) / max(math.log(len(probabilities)), 1e-30))}
+                'policy_normalized_entropy': float(-np.dot(probabilities, np.log(np.maximum(probabilities, 1e-300))) / max(math.log(len(probabilities)), 1e-30))})
         attempt_started = time.perf_counter()
         try:step = env.step(plan)
         except TimeoutError as error:
@@ -717,6 +763,8 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                 'episode_terminated': terminal, 'budget_truncated': False,
                 'evaluation_elapsed_s': duration, 'proposal_elapsed_s': proposal_duration})
             trace[-1].update(decision_evidence)
+            trace[-1]["search_elapsed_s"] = elapsed_before + time.perf_counter() - started
+            trace[-1]["policy_updated"] = False
             if terminal:
                 reset_state, reset_metrics = bootstrap_evaluations[(steps // config.horizon) % len(bootstrap_evaluations)] if bootstrap_evaluations else (initial_state, initial_metrics)
                 env.current_state, env.current_metrics = reset_state.with_report(reset_metrics), reset_metrics
@@ -769,6 +817,8 @@ def run_joint_search(workload, initial_state, architecture_candidates, evaluator
                       "episode_terminated": terminal, "budget_truncated": False,
                       "evaluation_elapsed_s": step.evaluation_elapsed_s, "proposal_elapsed_s": proposal_duration})
         trace[-1].update(decision_evidence)
+        trace[-1]["search_elapsed_s"] = elapsed_before + time.perf_counter() - started
+        trace[-1]["policy_updated"] = bool(step.valid and config.method == "rl")
         if initial_state.version >= 2:
             trace[-1]['candidate_shortlist'] = shortlist_evidence
         if terminal:

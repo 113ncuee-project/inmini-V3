@@ -1,0 +1,17 @@
+{
+  "source_sha256": "d26087780f6d7b049fa8cacf0ca764fcde8c79d302aa0124c35a42044475484a",
+  "command": [
+    "C:\\Vivado\\2022.1\\tps\\mingw\\6.2.0\\win64.o\\nt\\bin\\g++.exe",
+    "-std=c++14",
+    "-O3",
+    "-ffp-contract=off",
+    "-shared",
+    "-static-libgcc",
+    "-static-libstdc++",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\hybrid\\native_calendar.cpp",
+    "-o",
+    "C:\\Users\\user\\Desktop\\rapidchiplet\\simplified_rapidchiplet\\simple_rapidchiplet\\hybrid\\_native\\calendar_d26087780f6d7b04.dll"
+  ],
+  "compiler": "g++.exe (x86_64-win32-sjlj-rev1, Built by MinGW-W64 project) 6.2.0\nCopyright (C) 2016 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.\n\n",
+  "model_change": false
+}

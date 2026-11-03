@@ -1,3 +1,7 @@
+> **2026-11-02 最新交付：本機 RL 診斷工具。** 使用者最新授權只實作工具並跑小型驗收，P1～P6 由使用者自行啟動；不得恢復 PAUSED 排程或自行啟動正式長跑。舊 formal_v4 已 failed，保留全部來源／資料，不自動重啟。詳見 docs/LOCAL_RL_EXPERIMENTS_README.md 與 docs/LOCAL_RL_TOOLS_VALIDATION.md。132 項測試通過；Toy 受控停止／續跑與帳本、唯讀分析、ZIP 驗證通過。以下舊時序紀錄保留，不代表目前仍在背景執行。
+
+> **2026-11-03 授權更新：** 使用者已要求實作更有效的 RL 並驗證改善，本輪代表實驗正在執行。見 `docs/inmin_v04_progress.md`；新本機入口是 `run_inmin_v04_overnight.ps1`。上方「只跑小型驗收」是上一輪的歷史授權，本次已被新請求取代；每小時自動續作排程仍暫停。
+
 # INMIN v0.3 工作紀錄
 
 更新：2026-11-02 16:10 Asia/Taipei。這是使用者最新 Word 問題清單與 nn_dataflow 附件所要求的新一輪修改，尚待最終驗收及正式比較。
@@ -67,3 +71,16 @@ GitHub原發布版已成功推送113ncuee-project/inmini-V3 main commit19402044�
 使用者要求維持heartbeat排程PAUSED，已遵守；有限背景batch仍按授權執行。若app/主機停止，之後需由使用者手動接續，不會自行恢復排程。
 
 已公開同步程式到GitHub inmini-V3，稍後本次normalization修正再同步。新seed的可行PPA與113項正確性驗證不等於新版RL優勢；最終改善數據須以formal_v4結果為準。
+
+## 本機工具交付（2026-11-02）
+
+- 新 CLI：simplified_rapidchiplet/scripts/run_local_rl_diagnostics.py，doctor/list/dry-run/run/status/stop/resume/summarize/audit/export/replay。明確的 smoke/diagnostic/research，順序執行；research 需使用者 --confirm-research。
+- M/F 固定完整架構，M 固定 Fusion Off；候選與執行前雙重遮罩，整筆拒絕內含 A9 或越界 Fusion 的交易。Generic generator 與 features mask 分開；P2 為 2×2。
+- 共用已完成 Seed、reference 與起點；P5 RNG 7/17/37 搭配 rank 0/1/2 的不同可行 Seed，不足就停止；相對收益永遠以全 archive 最佳 Seed 計算。
+- seed、搜尋、Greedy lookahead、cache、timeout、reject 與 export 分帳；durable completed responses 防止中斷後重算已完成 PPA。不偽造遺失的 policy update。
+- 最終 acceptance_verified：132 tests/0 failures/0 errors/source_stable=true/61.735s。workflow_verified：Toy 四方法、受控 stop/resume 同序列／最佳 mapping、唯讀分析不改 checkpoint/ledger、ZIP CRC，74.515s/source_stable=true。
+- 新 Toy M 四方法各3 seed+9 search PPA；BA 與 Random 同為11.570939%改善，Greedy16.981520%，Atomic0%；僅小型工具驗收，沒有大型模型效益結論。
+- Toy 固定 Mapping Fusion pair：2 PPA，On重播相符；另5 chosen-action pairs共8新PPA+2cache，不捏造缺少的timeout/recompute類型。
+- 沒有啟動新的 ResNet 正式研究，也沒有恢復排程。長時間研究從使用者自己的 Terminal 啟動，無需 LLM/API/token，保留 Terminal 與電源即可。
+
+- 本機交付壓縮包：output/uploads/INMIN_v03_Local_RL_Tools_20261102.zip，178檔／633046 bytes，CRC與逐檔SHA256均通過；SHA256 0b3be718b35c56075fa74a9a2dc287f717b883f8a221cd2d7922ed1b0200fb43。解壓至獨立驗證目錄後再跑Toy（6總PPA上限）完成，9.469秒、audit無錯誤。交付來源identity 30aa49973af5b948260d5bbd1b96f28bfdbc060390056873d6bef367c19939f9。

@@ -20,6 +20,26 @@ class SingleArrayOraclePool(BoundedOraclePool):
             self.records = json.loads(ledger.read_text(encoding='utf-8'))
             self.full_evaluations = sum(row.get('full_evaluations', 0) for row in self.records)
             self.cache_hits = sum(row.get('cache_hits', 0) for row in self.records)
+        for record in self.records:
+            if record.get('status') == 'running':
+                record['status'] = 'interrupted_unknown'
+                record['termination_reason'] = 'prior request lacked parent completion; do not treat as failed design'
+        for path in sorted((self.folder / 'completed').glob('*.json')):
+            result = json.loads(path.read_text(encoding='utf-8'))
+            if not any(r.get('durable_key') == path.stem and r.get('full_evaluations') for r in self.records):
+                full = result.get('full_evaluations', 0)
+                if full:
+                    self.records.append({'operation': 'evaluate', 'status': 'complete', 'durable_key': path.stem,
+                        'architecture': result.get('architecture'), 'full_evaluations': full, 'cache_hits': 0,
+                        'recovered_completed_response': True, 'elapsed_s': result.get('evaluation_elapsed_s', 0),
+                        'evaluation_cpu_s': result.get('evaluation_cpu_s'),
+                        'ppa_feasible': result['metrics']['feasible']})
+                    self.full_evaluations += full
+        if self.records:
+            atomic_json(self.folder / 'accounting.json', self.records)
+
+    def completed_evidence(self):
+        return [json.loads(p.read_text(encoding='utf-8')) for p in sorted((self.folder / 'completed').glob('*.json'))]
 
     def _start(self):
         if self.process is not None and self.process.poll() is None:
@@ -34,6 +54,24 @@ class SingleArrayOraclePool(BoundedOraclePool):
 
     def evaluate(self, candidate, plan, *, deadline=None, phase='rl'):
         end = min(self.deadline, deadline if deadline is not None else self.deadline)
+        digest = hashlib.sha256(json.dumps({'architecture': candidate.id, 'hardware_profile': candidate.hardware.profile_id, 'mapping': plan.to_dict()}, sort_keys=True).encode()).hexdigest()
+        durable = self.folder / 'completed' / (digest + '.json')
+        if durable.exists():
+            result = json.loads(durable.read_text(encoding='utf-8'))
+            recorded = any(r.get('durable_key') == digest and r.get('full_evaluations') for r in self.records)
+            # A crash after completion but before parent bookkeeping recovers that
+            # completed PPA once; subsequent accesses are durable cache hits.
+            full = 0 if recorded else result.get('full_evaluations', 0)
+            self.records.append({'operation': 'evaluate', 'status': 'complete', 'phase': phase,
+                'architecture': candidate.id, 'durable_key': digest, 'full_evaluations': full,
+                'cache_hits': int(recorded), 'recovered_completed_response': not recorded,
+                'ppa_feasible': result['metrics']['feasible'], 'elapsed_s': 0.,
+                'evaluation_cpu_s': result.get('evaluation_cpu_s') if full else 0.,
+                'evaluation_elapsed_s': result.get('evaluation_elapsed_s', 0.) if full else 0.})
+            self.full_evaluations += full
+            self.cache_hits += int(recorded)
+            atomic_json(self.folder / 'accounting.json', self.records)
+            return {**result, 'full_evaluations': full, 'cache_hits': int(recorded)}
         index = len(self.records)
         try:
             result = self.request('evaluate', deadline=end, architecture=candidate.id,
@@ -41,6 +79,8 @@ class SingleArrayOraclePool(BoundedOraclePool):
                 worker_timeout_s=min(self.evaluation_timeout_s, max(0., end - time.monotonic())))
             if len(self.records) > index:
                 self.records[index]['ppa_feasible'] = result['metrics']['feasible']
+                self.records[index]['durable_key'] = digest
+                self.records[index]['evaluation_cpu_s'] = result.get('evaluation_cpu_s')
             return result
         except (ValueError, RuntimeError, TimeoutError) as error:
             if len(self.records) > index:
@@ -77,6 +117,7 @@ def worker(folder):
     evaluators, last = {}, None
     for line in sys.stdin.buffer:
         req, started = json.loads(line), time.monotonic()
+        cpu_started = time.process_time()
         full = hits = 0
         try:
             key = req['architecture']
@@ -118,12 +159,19 @@ def worker(folder):
                 value = {'folder': str(target), 'metrics': result.metrics}
             else:
                 raise ValueError('unknown v0.2 operation')
-            atomic_json(req['response'], {'status': 'complete', 'full_evaluations': full, 'cache_hits': hits,
-                'evaluation_elapsed_s': time.monotonic() - started, **value})
+            response = {'status': 'complete', 'full_evaluations': full, 'cache_hits': hits,
+                'evaluation_elapsed_s': time.monotonic() - started,
+                'evaluation_cpu_s': time.process_time() - cpu_started, **value}
+            if req['operation'] == 'evaluate':
+                digest = hashlib.sha256(json.dumps({k: req[k] for k in ('architecture', 'hardware_profile', 'mapping')}, sort_keys=True).encode()).hexdigest()
+                response.update(completed_unix=time.time(), architecture=key, mapping=req['mapping'])
+                atomic_json(folder / 'completed' / (digest + '.json'), response)
+            atomic_json(req['response'], response)
         except Exception as exc:
             atomic_json(req['response'], {'status': 'error', 'error_type': type(exc).__name__,
                 'error': f'{type(exc).__name__}: {exc}', 'full_evaluations': full, 'cache_hits': hits,
-                'evaluation_elapsed_s': time.monotonic() - started})
+                'evaluation_elapsed_s': time.monotonic() - started,
+                'evaluation_cpu_s': time.process_time() - cpu_started})
 
 
 if __name__ == '__main__':

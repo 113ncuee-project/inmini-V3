@@ -9,7 +9,7 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PATTERNS = ('test_single_array*.py', 'test_joint_rl.py', 'test_rl_acceptance.py', 'test_rl_integration.py',
+PATTERNS = ('test_calendar_index.py', 'test_replay_mapping_v4.py', 'test_local_rl_diagnostics.py', 'test_single_array*.py', 'test_joint_rl.py', 'test_rl_acceptance.py', 'test_rl_integration.py',
             'test_tangram_seed.py', 'test_gemini_hardware_diagnostics.py', 'test_gui04.py', 'test_gui04_v3.py')
 
 
@@ -17,6 +17,10 @@ def manifest():
     paths = list((ROOT / 'simple_rapidchiplet' / 'hybrid').glob('*.py'))
     paths += [ROOT / name for name in ('single_array_dse.py', 'single_array_gui.py', 'gui_request.py', 'gui_request_v3.py', 'gui_request_v4.py', 'hybrid_gui.py')]
     paths += list((ROOT / 'gui').glob('*'))
+    paths += list((ROOT / 'scripts').glob('*local*.py'))
+    paths += [ROOT / 'replay_mapping_dse.py', ROOT / 'scripts' / 'build_native_calendar.py']
+    paths += list((ROOT / 'simple_rapidchiplet' / 'hybrid').glob('*.cpp'))
+    paths += list((ROOT / 'simple_rapidchiplet' / 'hybrid' / '_native').glob('*'))
     for pattern in PATTERNS:
         paths += list((ROOT / 'tests').glob(pattern))
     return {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest() for path in sorted(set(paths)) if path.is_file()}

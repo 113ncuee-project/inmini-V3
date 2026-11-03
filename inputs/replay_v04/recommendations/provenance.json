@@ -1,0 +1,18 @@
+{
+  "source_run": "output\\inmin_v04_20261103\\r18_release_128",
+  "source_identity": "139b7fa2dffa727dafbaaea11c27fe6e7efa36197a47e1b2d70ad9dec6fb9310",
+  "training_objective": "balanced",
+  "archive_selection": "EDP-selected already completed mapping; no new oracle or policy update",
+  "files": [
+    {
+      "file": "resnet18_query128_cost_min.json",
+      "sha256": "d18982ad8be0ea8ade79042104543964299a5cf1080246b8ff4b039f10d456b3",
+      "origin": "output\\inmin_v04_20261103\\r18_release_128\\replay_rl\\recommendation.json"
+    },
+    {
+      "file": "resnet18_query128_edp_archive.json",
+      "sha256": "e671115cdd576822823084c52ddedc5b02ef802208ebfd32eb7476de13dcaca2",
+      "origin": "output\\inmin_v04_20261103\\r18_release_128\\replay_rl\\recommendation_fast_energy.json"
+    }
+  ]
+}

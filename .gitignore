@@ -5,5 +5,14 @@ __pycache__/
 .env*
 node_modules/
 simplified_rapidchiplet/results/
+output/
+editable_outputs/
+tmp/
+audit_*/
+.codex-pptx-build/
+
+# Public release packages contain portable code and curated numerical results.
+# Full local evidence archives and private material remain outside Git history.
+release_packages/*Evidence*.zip
 *.pkl
 *.log

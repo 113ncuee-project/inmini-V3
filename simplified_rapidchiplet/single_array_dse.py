@@ -35,7 +35,7 @@ from simple_rapidchiplet.hybrid.single_array_seed import generate_single_array_s
 from simple_rapidchiplet.hybrid.workload import make_toy_workload
 
 
-ARMS = {'random': ('random', 'composite'), 'greedy': ('greedy', 'composite'),
+ARMS = {'seed_only': ('seed', 'atomic'), 'random': ('random', 'composite'), 'greedy': ('greedy', 'composite'),
         'atomic_rl': ('rl', 'atomic'), 'bottleneck_rl': ('rl', 'composite')}
 
 
@@ -87,7 +87,15 @@ def scalar_metrics(metrics):
     return {key: metrics.get(key) for key in ('feasible', 'latency_s', 'area_mm2', 'power_w', 'energy_j',
         'compute_chiplets', 'io_chiplets', 'executed_macs', 'recompute_macs', 'dram_read_bytes',
         'dram_write_bytes', 'noc_hop_bytes', 'nop_hop_bytes', 'unit_count', 'violations',
-        'architecture_candidate_id', 'l1_l2_service_bytes', 'compute_utilization')}
+        'architecture_candidate_id', 'l1_l2_service_bytes', 'compute_utilization', 'oracle_phase_wall_s')}
+
+
+def select_seed_start(bootstrap, objective, reference, rank=0):
+    unique = list({s.fingerprint: (s, m) for s, m in bootstrap}.values())
+    ranked = sorted(unique, key=lambda row: objective.penalized_cost(row[1], reference))
+    if not 0 <= rank < len(ranked):
+        raise ValueError('start rank requires more completed distinct feasible seeds; increase explicit seed budget in a NEW run')
+    return ranked[0], ranked[rank]
 
 
 def export_search_evidence(folder, result, pool, seed_data, candidates):
@@ -161,6 +169,19 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
             candidates = enumerate_single_array_architectures_v3()
         else:
             candidates = enumerate_single_array_architectures()
+        fixed = getattr(args, 'fixed_architecture', None)
+        space = getattr(args, 'search_space', 'joint')
+        if space != 'joint' and not fixed:
+            raise ValueError('fixed architecture ID required for mapping_only/mapping_fusion')
+        if fixed:
+            candidates = tuple(c for c in candidates if c.id == fixed)
+            if not candidates:
+                raise ValueError('unknown complete architecture ID: ' + fixed)
+        if space == 'mapping_only' and args.fusion != 'off':
+            raise ValueError('mapping_only runner currently requires fusion off')
+        stop_file = Path(args.stop_file) if getattr(args, 'stop_file', None) else None
+        def stopped():
+            return stop_file is not None and stop_file.exists()
         profile = candidates[0].hardware.profile_id
         lookup = {c.id: c for c in candidates}
         identity = source_identity(workload, candidates)
@@ -209,6 +230,20 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
                 constraints={key: value for key, value in obj.items() if key.startswith(('max_', 'soft_'))},
                 workload_definition={'batch_size': 1, 'model': workload.name, 'source': workload.source})
         seed_file = folder / 'seed_attempts.json'
+        common = getattr(args, 'common_seed', None)
+        if common and not seed_file.exists():
+            donor = Path(common)
+            donor_identity = json.loads((donor / 'source_identity.json').read_text(encoding='utf-8'))
+            donor_config = json.loads((donor / 'effective_config.json').read_text(encoding='utf-8'))
+            if donor_identity['identity'] != identity['identity'] or any(donor_config.get(k) != effective.get(k) for k in ('model', 'input_size', 'seed', 'objective', 'fixed_architecture')):
+                raise ValueError('common seed source/workload/hardware/RNG/objective mismatch')
+            shared = json.loads((donor / 'seed_attempts.json').read_text(encoding='utf-8'))
+            if not shared['bootstrap']:
+                raise ValueError('common seed has no completed feasible state')
+            if any(row['state']['mapping'].get('fusion_stacks') for row in shared['bootstrap']):
+                raise ValueError('common seed must have fusion off for controlled local experiments')
+            shared['shared_from'] = str(donor.resolve())
+            atomic_json(seed_file, shared)
         seed_data = json.loads(seed_file.read_text(encoding='utf-8')) if seed_file.exists() else {'attempts': [], 'bootstrap': [], 'elapsed_s': time.monotonic() - started}
         bootstrap = [(DesignState.from_dict(row['state']), row['metrics']) for row in seed_data['bootstrap']]
         attempted = {row['state_hash'] for row in seed_data['attempts']}
@@ -216,14 +251,30 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
         # A9; omitted seed rectangles are recorded, never reported searched.
         seed_candidates = [min([c for c in candidates if c.hardware.compute_count == count],
                                key=lambda c: (abs(c.hardware.rows - c.hardware.cols), c.hardware.rows))
-                           for count in (range(1, 17) if modern else (1, 2, 4, 8, 16))]
+                           for count in sorted({c.hardware.compute_count for c in candidates})]
         seed_ceiling = getattr(args, 'seed_seconds', 7200.) if modern else args.seconds * .20
         seed_deadline = time.monotonic() + max(.1, seed_ceiling - seed_data['elapsed_s'])
         pool = SingleArrayOraclePool(workload, folder / 'seed_worker', deadline=seed_deadline,
                                      evaluation_timeout_s=args.eval_timeout)
+        from simple_rapidchiplet.hybrid.search import plan_from_dict
+        for recovered in pool.completed_evidence():
+            if not recovered.get('mapping'):
+                continue
+            state = make_state(lookup[recovered['architecture']], plan_from_dict(recovered['mapping']))
+            if state.fingerprint not in attempted:
+                metrics = recovered['metrics']
+                seed_data['attempts'].append({'architecture': state.architecture_candidate_id,
+                    'state_hash': state.fingerprint, 'status': 'full_completed', 'ppa_completed': True,
+                    'recovered_after_interrupt': True, 'elapsed_s': recovered['evaluation_elapsed_s'], 'metrics': scalar_metrics(metrics)})
+                attempted.add(state.fingerprint)
+                if metrics.get('feasible'):
+                    bootstrap.append((state, metrics))
+        seed_data['bootstrap'] = [{'state': s.to_dict(), 'metrics': m} for s, m in bootstrap]
         phase_start = time.monotonic()
         seed_proposals = {}
-        for candidate in seed_candidates:
+        for candidate in (() if bootstrap else seed_candidates):
+            if stopped():
+                raise InterruptedError("user_stop_requested")
             if modern:
                 from simple_rapidchiplet.hybrid.single_array_seed_v3 import generate_seeds_v3
                 seed_proposals[candidate.id] = generate_seeds_v3(workload, candidate.hardware,
@@ -237,19 +288,21 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
         # cover larger scales. Budget-truncated scales/proposals remain visible.
         planned = []
         for candidate in seed_candidates:
-            proposals = seed_proposals[candidate.id]
+            proposals = seed_proposals.get(candidate.id, ())
             baseline = proposals[0].plan if proposals else initial_mapping(workload, candidate.package.mapping_core_ids,
                 candidate.package.memory_ids, max_group_layers=1)
             planned.append((candidate, baseline, proposals[0].to_dict() if proposals else {'provenance': {'source': 'integer_stripes'}}))
             if candidate.hardware.compute_count <= 2 and len(proposals) > 1:
                 planned.append((candidate, proposals[1].plan, proposals[1].to_dict()))
         for candidate in seed_candidates:
-            for proposal in seed_proposals[candidate.id][2 if candidate.hardware.compute_count <= 2 else 1:]:
+            for proposal in seed_proposals.get(candidate.id, ())[2 if candidate.hardware.compute_count <= 2 else 1:]:
                 planned.append((candidate, proposal.plan, proposal.to_dict()))
         atomic_json(folder / 'seed_proposals.json', [{'architecture': c.id, 'state_hash': make_state(c, p).fingerprint,
             'proposal': evidence} for c, p, evidence in planned])
         try:
-            for candidate, mapping, proposal_evidence in planned:
+            for candidate, mapping, proposal_evidence in ([] if bootstrap and seed_data.get("shared_from") else planned):
+                if stopped():
+                    raise InterruptedError("user_stop_requested")
                 state = make_state(candidate, mapping)
                 if state.fingerprint in attempted:
                     continue
@@ -281,12 +334,14 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
                 seed_data['attempts'].append(attempt)
                 attempted.add(state.fingerprint)
                 seed_data['bootstrap'] = [{'state': s.to_dict(), 'metrics': m} for s, m in bootstrap]
-                seed_data['elapsed_s'] += time.monotonic() - phase_start
+                if not seed_data.get('shared_from'):
+                    seed_data['elapsed_s'] += time.monotonic() - phase_start
                 phase_start = time.monotonic()
                 atomic_json(seed_file, seed_data)
         finally:
             pool.close()
-            seed_data['elapsed_s'] += time.monotonic() - phase_start
+            if not seed_data.get('shared_from'):
+                seed_data['elapsed_s'] += time.monotonic() - phase_start
             atomic_json(seed_file, seed_data)
         coverage = []
         for candidate in candidates:
@@ -305,14 +360,31 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
         # One shared reference across all methods. The initial state is the best
         # fully evaluated seed under that fixed reference, not bootstrap[0].
         reference = bootstrap[0][1]
-        initial, _ = min(bootstrap, key=lambda row: objective.penalized_cost(row[1], reference))
+        (best_seed, best_seed_metrics), (initial, start_metrics) = select_seed_start(bootstrap, objective, reference, getattr(args, 'start_rank', 0))
         bootstrap.sort(key=lambda row: row[0].fingerprint != initial.fingerprint)
-        initial_cost = objective.cost(next(m for s, m in bootstrap if s.fingerprint == initial.fingerprint), reference)
-        seed_full = pool.full_evaluations
+        initial_cost = objective.cost(best_seed_metrics, reference)
+        atomic_json(folder / 'common_start.json', {'initial_state_hash': initial.fingerprint,
+            'best_seed_hash': best_seed.fingerprint, 'start_rank': getattr(args, 'start_rank', 0),
+            'best_seed_cost': initial_cost, 'start_cost': objective.cost(start_metrics, reference),
+            'reference_metrics': scalar_metrics(reference), 'scope': 'all arms share this start; gains always measured against global best validated seed'})
+        seed_full = sum(bool(row.get("ppa_completed")) for row in seed_data["attempts"])
         summaries = {}
         search_ceiling = max(.1, args.seconds if modern else args.seconds - seed_data['elapsed_s'])
         for arm in args.arms.split(','):
+            if stopped():
+                raise InterruptedError('user_stop_requested')
             arm_folder = folder / arm
+            if arm == 'seed_only':
+                metrics = best_seed_metrics
+                summary = {'status': 'seed_only', 'full_ppa_completed': seed_full, 'common_seed_full_ppa': seed_full,
+                    'search_full_ppa': 0, 'policy_updates': 0, 'cache_hits': 0, 'oracle_timeouts': 0,
+                    'wall_s_including_common_seed_charge': seed_data['elapsed_s'], 'strict_feasible': objective.strict_feasible(metrics),
+                    'best_cost': initial_cost, 'best': scalar_metrics(metrics), 'improvement_over_best_seed_pct': 0.0}
+                atomic_json(arm_folder / 'joint_search.json', {'summary': summary, 'trace': [], 'best_state': best_seed.to_dict(), 'best_metrics': metrics})
+                atomic_json(arm_folder / 'recommendation.json', {'state': best_seed.to_dict(), 'metrics': metrics})
+                summaries[arm] = summary
+                atomic_json(folder / 'summary.json', summaries)
+                continue
             result_file = arm_folder / 'joint_search.json'
             if result_file.exists() and args.resume:
                 result = json.loads(result_file.read_text(encoding='utf-8'))
@@ -327,6 +399,8 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
             deadline = time.monotonic() + remaining
             pool = SingleArrayOraclePool(workload, arm_folder / 'worker', deadline=deadline,
                                          evaluation_timeout_s=args.eval_timeout)
+            recovered_search = [(make_state(lookup[r['architecture']], plan_from_dict(r['mapping'])), r['metrics'])
+                for r in pool.completed_evidence() if r.get('mapping')]
             # Reserve reporting time proportionally, bounded for short smoke.
             reserve = min(60., max(1., remaining * .05))
             pool.deadline = deadline - reserve
@@ -346,6 +420,16 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
                         raise TimeoutError('insufficient remaining time for a recent complete oracle cost plus report reserve')
                     response = pool.evaluate(candidate, mapping, phase='search')
                     metrics = response['metrics']
+                    state = make_state(candidate, mapping)
+                    event = {'schema_version': 1, 'event_id': len(pool.records), 'utc_unix': time.time(),
+                        'wall_time_monotonic': time.monotonic(), 'utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                        'run_id': os.environ.get('INMIN_LOCAL_RUN_ID'), 'source_identity': identity['identity'],
+                        'model': args.model, 'arm': arm, 'rng_seed': args.seed, 'stage': 'search', 'state_hash': state.fingerprint, 'architecture': candidate.id,
+                        'full_ppa_completed': pool.full_evaluations, 'cache_hit': bool(response.get('cache_hits')),
+                        'search_wall_s': prior_elapsed + remaining - max(0., deadline - time.monotonic()),
+                        'metrics': scalar_metrics(metrics), 'cost': objective.cost(metrics, reference) if metrics.get('feasible') else None}
+                    with (arm_folder / 'evaluation_events.jsonl').open('a', encoding='utf-8') as stream:
+                        stream.write(json.dumps(event, allow_nan=False) + '\n')
                     update(message=f'{workload.name}: completed PPA {seed_full + pool.full_evaluations}/{args.queries}',
                            current_model=args.model, model_remaining_wall_s=max(0., deadline - time.monotonic()))
                     state = make_state(candidate, mapping)
@@ -363,13 +447,15 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
             method, proposal = ARMS[arm]
             config = JointSearchConfig(seed=args.seed, budget=max(32, args.queries * 8), max_steps=max(32, args.queries * 8),
                 horizon=12, shortlist=args.shortlist, random_quota=min(12, args.shortlist // 2),
-                method=method, proposal=proposal, bottleneck_features=getattr(args, 'bottleneck_features', 'on') == 'on', checkpoint_every=1, fusion_enabled=args.fusion != 'off',
+                method=method, proposal=proposal, search_space=space, generator_guidance=getattr(args, 'generator', 'guided') == 'guided', bottleneck_features=getattr(args, 'bottleneck_features', 'on') == 'on', checkpoint_every=1, fusion_enabled=args.fusion != 'off',
                 max_wall_time_s=max(.001, search_ceiling - reserve))
             hook = SingleArrayJointProposals(workload, candidates, shortlist=args.shortlist,
-                fusion_enabled=args.fusion != 'off') if proposal == 'composite' else None
+                fusion_enabled=args.fusion != 'off', generator_guidance=getattr(args, 'generator', 'guided') == 'guided') if proposal == 'composite' else None
             if hook:
                 hook.deadline = pool.deadline
             def guard(_):
+                if stopped():
+                    return "user_stop_requested"
                 if time.monotonic() >= pool.deadline:
                     return 'wall_time_budget_exhausted'
                 if seed_full + pool.full_evaluations >= args.queries:
@@ -377,11 +463,28 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
                 if pool.deadline - time.monotonic() < recent_full_cost():
                     return 'insufficient_oracle_time_budget_exhausted'
                 return None
+            observed_full = [pool.full_evaluations]
+            def observe_query(context, state, metrics, status, elapsed):
+                if not context:
+                    return
+                new_full = max(0, pool.full_evaluations - observed_full[0])
+                observed_full[0] = pool.full_evaluations
+                event = {'schema_version': 1, 'run_id': os.environ.get('INMIN_LOCAL_RUN_ID'),
+                    'source_identity': identity['identity'], 'utc': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+                    'wall_time_monotonic': time.monotonic(), 'model': args.model, 'arm': arm, 'rng_seed': args.seed,
+                    **context, 'state_hash': state.fingerprint, 'status': status, 'new_full_ppa': new_full,
+                    'feasible': bool(metrics and metrics.get('feasible')), 'elapsed_s': elapsed,
+                    'cost': objective.cost(metrics, reference) if metrics and metrics.get('feasible') else None,
+                    'common_seed_cost': initial_cost}
+                with (arm_folder / 'query_events.jsonl').open('a', encoding='utf-8') as stream:
+                    stream.write(json.dumps(event, allow_nan=False) + '\n')
             try:
                 result = run_joint_search(workload, initial, candidates, factory, objective=objective,
                     config=config, checkpoint_path=checkpoint, resume=args.resume and checkpoint.exists(),
                     evaluator_identity=identity['identity'], bootstrap_evaluations=bootstrap,
-                    proposal_hook=hook, resource_guard=guard, reference_metrics=reference)
+                    proposal_hook=hook, resource_guard=guard, reference_metrics=reference, recovered_evaluations=recovered_search, query_observer=observe_query)
+                if result.status == "user_stop_requested":
+                    raise InterruptedError("user_stop_requested; checkpoint saved")
                 data = result.to_dict()
                 best = result.best_metrics
                 summary = {'status': result.status, 'full_ppa_completed': seed_full + pool.full_evaluations,
@@ -424,9 +527,10 @@ def run(args, *, objective_override=None, requested_ui=None, update=lambda **_: 
                 lines.append('|' + '|'.join(str(value) for value in (arm, b['compute_chiplets'], b['io_chiplets'],
                     b['executed_macs'], b['recompute_macs'], b['dram_read_bytes'], b['dram_write_bytes'],
                     b['noc_hop_bytes'], b['nop_hop_bytes'], b['unit_count'])) + '|')
-        if set(summaries) == set(ARMS) and all(row['full_ppa_completed'] == args.queries for row in summaries.values()):
+        search_summaries = {arm: row for arm, row in summaries.items() if arm != 'seed_only'}
+        if set(search_summaries) == {'random','greedy','atomic_rl','bottleneck_rl'} and all(row['full_ppa_completed'] == args.queries for row in search_summaries.values()):
             bottle = summaries['bottleneck_rl']['best_cost']
-            others = [summaries[arm]['best_cost'] for arm in ARMS if arm != 'bottleneck_rl']
+            others = [summaries[arm]['best_cost'] for arm in search_summaries if arm != 'bottleneck_rl']
             if bottle is not None and all(value is not None for value in others):
                 comparison = ('優於三個對照' if bottle < min(others) - 1e-9 else
                               '與最佳對照持平' if abs(bottle - min(others)) <= 1e-9 else '未優於最佳對照')
@@ -478,6 +582,12 @@ def main():
     parser.add_argument('--max-latency-ms', type=float)
     parser.add_argument('--soft-limits', action='store_true')
     parser.add_argument('--seed-method', choices=('stripes', 'tangram_style_v02'), default='tangram_style_v02')
+    parser.add_argument('--search-space', choices=('mapping_only', 'mapping_fusion', 'joint'), default='joint')
+    parser.add_argument('--fixed-architecture')
+    parser.add_argument('--start-rank', type=int, default=0)
+    parser.add_argument('--generator', choices=('guided','generic'), default='guided')
+    parser.add_argument('--common-seed')
+    parser.add_argument('--stop-file')
     parser.add_argument('--bottleneck-features', choices=('on','off'), default='on')
     parser.add_argument('--engine', choices=('v02', 'v03'), default='v03')
     parser.add_argument('--seed-seconds', type=float, default=7200.)
@@ -488,7 +598,7 @@ def main():
     parser.add_argument('--eval-timeout', type=float, default=1800.)
     parser.add_argument('--shortlist', type=int, default=64)
     parser.add_argument('--fusion', choices=('on', 'off'), default='on')
-    parser.add_argument('--arms', default=','.join(ARMS))
+    parser.add_argument('--arms', default='random,greedy,atomic_rl,bottleneck_rl')
     parser.add_argument('--out', default='../output/inmin_v03_20261102/toy_development')
     parser.add_argument('--resume', action='store_true')
     args = parser.parse_args()

@@ -7,7 +7,7 @@ atomically, so split queue-wait attribution is explicitly unsupported.
 """
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import defaultdict,OrderedDict
 from dataclasses import asdict, dataclass, replace
 import hashlib
 import json
@@ -18,7 +18,7 @@ import time
 from .communication import Transfer, build_communication
 from .costs import sram_bank
 from .diagnostics import _schedule_slack
-from .mapping import TensorRegion
+from .mapping import TensorRegion,validate_plan
 from .reuse import _union_elements, apply_weight_reuse, dram_residency
 from .scheduler import Job, peak_interval_bytes, schedule_jobs
 from .single_array_compiler import compile_single_array, tile_requirements
@@ -52,23 +52,29 @@ class SingleArrayEvaluation:
 
 
 class SingleArrayEvaluator:
-    def __init__(self, workload, hardware=None, *, trace=True, deadline=None, compile_hook=None):
+    def __init__(self, workload, hardware=None, *, trace=True, deadline=None, compile_hook=None, calendar_backend='auto'):
         self.workload = workload
         self.hardware = hardware or SingleArrayHardware()
         self.trace, self.deadline = trace, deadline
         self.compile_hook, self.compile_evidence = compile_hook, None
+        from .native_schedule import available,source_hash
+        self.calendar_backend=('native' if available() else 'coalesced') if calendar_backend=='auto' else calendar_backend
         self.package = build_single_array_package(self.hardware)
         self.nocs = {f'compute:{die}': build_single_array_noc(self.hardware, die)
                      for die in range(self.hardware.compute_count)}
         self.cache, self.cache_hits, self.evaluations = {}, 0, 0
         self._path_cache = {}
+        self._transfer_service_cache = {}
+        self._kernel_cache = {}
+        self._geometry_cache = OrderedDict()
+        self._geometry_items = 0
         self._package_paths = {}
         self._link_map = {frozenset((link.source, link.destination)): link for link in self.package.links}
         self.sources = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
                         for p in Path(__file__).parent.glob('*.py')}
         self.identity = hashlib.sha256(json.dumps({"workload": workload.fingerprint,
             "hardware": self.hardware.to_dict(), "sources": self.sources,
-            "scheduler": "priority_resource_calendar_coalesced_v1"}, sort_keys=True).encode()).hexdigest()
+            "scheduler": self.calendar_backend, "native_source":source_hash()}, sort_keys=True).encode()).hexdigest()
         self.banks = self.hardware.sram_costs
 
     def _check_time(self):
@@ -102,6 +108,15 @@ class SingleArrayEvaluator:
         return duration, resources, loads, sum(row[2] for row in loads) * 8 * .4e-12
 
     def transfer_service(self, transfer):
+        key=(transfer.src,transfer.dsts,transfer.bytes,transfer.kind)
+        cached=self._transfer_service_cache.get(key)
+        if cached is None:
+            cached=self._transfer_service_uncached(transfer)
+            if len(self._transfer_service_cache)>=32768:self._transfer_service_cache.clear()
+            self._transfer_service_cache[key]=cached
+        return (*cached[:3],dict(cached[3]))
+
+    def _transfer_service_uncached(self, transfer):
         """Only endpoints access L2/DMA; transit compute routers never do."""
         spec = self.hardware
         source = physical_die(transfer.src)
@@ -159,6 +174,12 @@ class SingleArrayEvaluator:
         return duration, tuple(dict.fromkeys(resources)), tuple(loads), dict(components)
 
     def _kernel(self, unit, layer):
+        key=(layer.id,unit.output_region.shape,unit.output_region.bounds[1],unit.dataflow)
+        if key not in self._kernel_cache:
+            self._kernel_cache[key]=self._kernel_uncached(unit,layer)
+        return dict(self._kernel_cache[key])
+
+    def _kernel_uncached(self, unit, layer):
         """16 output lanes x16 input MACs; tails and grouped conv are explicit."""
         if not unit.macs:
             return {"mac_cycles": 0, "l1_read_bytes": 0, "l1_write_bytes": 0, "lane_utilization": 0.}
@@ -195,15 +216,38 @@ class SingleArrayEvaluator:
         if key in self.cache:
             self.cache_hits += 1
             return self.cache[key]
+        wall_started = time.monotonic()
+        cpu_started = time.process_time()
         spec, workload = self.hardware, self.workload
-        compiled = compile_single_array(workload, plan, spec)
+        geometry=plan.to_dict()
+        for mapping in geometry['layer_mappings']:
+            mapping['weight_policy']='cold';mapping['dataflow']='output_stationary'
+        geometry_key=hashlib.sha256(json.dumps(geometry,sort_keys=True).encode()).hexdigest()
+        cached=self._geometry_cache.get(geometry_key)
+        if cached is not None:
+            # Canonical geometry intentionally ignores these physical policy
+            # fields. Reusing compilation must not bypass their validation.
+            validate_plan(workload,plan,spec.compute_slots)
+            base,communication=cached
+            flow={m.layer_id:m.dataflow for m in plan.layer_mappings}
+            compiled=replace(base,plan=plan,units=tuple(replace(u,dataflow=flow[u.layer_id]) for u in base.units))
+            self._geometry_cache.move_to_end(geometry_key)
+        else:
+            compiled = compile_single_array(workload, plan, spec)
+        compiled_wall = time.monotonic()
         self.compile_evidence = {'fusion_depths': sorted({len(stack.layer_ids) for stack in plan.fusion_stacks}),
                                  'unit_count': len(compiled.units), 'executed_macs': sum(u.macs for u in compiled.units)}
         if self.compile_hook is not None:
             self.compile_hook(self.compile_evidence)
         self._check_time()
-        communication, reuse = apply_weight_reuse(compiled, split_read_cohorts(compiled,
-            build_communication(workload, compiled, plan.collective)))
+        if cached is None:
+            communication=split_read_cohorts(compiled,build_communication(workload,compiled,plan.collective))
+            if len(communication.transfers)<=250000:
+                while self._geometry_cache and (len(self._geometry_cache)>=8 or self._geometry_items+len(communication.transfers)>250000):
+                    _,old=self._geometry_cache.popitem(last=False);self._geometry_items-=len(old[1].transfers)
+                self._geometry_cache[geometry_key]=(compiled,communication)
+                self._geometry_items+=len(communication.transfers)
+        communication, reuse = apply_weight_reuse(compiled, communication)
         # Quantization scale/shift/zero point parameters are paid cold loads,
         # using the selected external weight IO (interleave -> explicit IO0).
         qparams = []
@@ -343,7 +387,9 @@ class SingleArrayEvaluator:
                            units[t.producer_units[0]].group_id == group.id and not t.consumer_units)
             add_job(f'group_done:{group.id}', members, (), 0., 'barrier', {}, (group_index[group.id], 10**9))
         self._check_time()
-        schedule = schedule_jobs(jobs, availability='coalesced')
+        jobs_wall = time.monotonic()
+        schedule = schedule_jobs(jobs, availability=self.calendar_backend)
+        scheduled_wall = time.monotonic()
         self._check_time()
         buffers = self._capacity(compiled, communication, schedule)
         memory = dram_residency(compiled, communication, schedule, spec)
@@ -389,8 +435,15 @@ class SingleArrayEvaluator:
             'compute_utilization': executed / (spec.compute_count * 4096 * spec.compute_clock_hz * schedule.makespan_s),
             'calibration_status': 'single_array_v0_2_uncalibrated', 'physical_limit_certified': False,
             'oracle_source_sha256': self.sources, 'timing_model': 'finite-buffer atomic routed flow reservations; full-channel PE tiles; serialized L2 RW/VPU; data-dependent stalls not modeled'}
+        physical_wall = time.monotonic()
         diagnostics = self._diagnostics(compiled, communication, schedule, service, local_loads, buffers, metrics)
         metrics['diagnostics'] = self.compact_diagnostics(diagnostics)
+        metrics['calendar_backend'] = self.calendar_backend
+        metrics['oracle_process_cpu_s'] = time.process_time() - cpu_started
+        metrics['exact_geometry_cache_hit'] = cached is not None
+        metrics['oracle_phase_wall_s'] = {'compile': compiled_wall - wall_started,
+            'communication_and_job_build': jobs_wall - compiled_wall, 'schedule': scheduled_wall - jobs_wall,
+            'capacity_and_metrics': physical_wall - scheduled_wall, 'diagnostics': time.monotonic() - physical_wall}
         result = SingleArrayEvaluation(metrics, compiled, communication, schedule, diagnostics,
                                        tuple(transfer_stats), buffers)
         self._check_time()

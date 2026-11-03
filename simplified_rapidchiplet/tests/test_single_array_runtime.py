@@ -3,6 +3,11 @@ from pathlib import Path
 import tempfile
 import time
 import unittest
+from unittest.mock import Mock,patch
+import subprocess
+import os
+import sys
+import json
 
 from simple_rapidchiplet.hybrid.auto_runtime import EvaluationTimeout
 from simple_rapidchiplet.hybrid.mapping import initial_mapping
@@ -56,6 +61,51 @@ class SingleArrayRuntimeTests(unittest.TestCase):
                 self.assertTrue(pool.process is None or pool.process.poll() is not None)
             finally:
                 pool.close()
+
+    def test_idle_cleanup_uses_EOF_without_external_taskkill(self):
+        from simple_rapidchiplet.hybrid.auto_runtime import BoundedOraclePool
+        pool=object.__new__(BoundedOraclePool);pool.process=Mock();pool.log=Mock()
+        process=pool.process;log=pool.log
+        with patch('simple_rapidchiplet.hybrid.auto_runtime.subprocess.run') as taskkill:
+            pool.close()
+            taskkill.assert_not_called()
+        process.stdin.close.assert_called_once();process.wait.assert_called_once()
+        self.assertIsNone(pool.process);log.close.assert_called_once()
+
+    def test_taskkill_timeout_can_reap_verified_owned_worker(self):
+        from simple_rapidchiplet.hybrid.auto_runtime import BoundedOraclePool
+        pool=object.__new__(BoundedOraclePool);pool.process=Mock();pool.log=None
+        process=pool.process;process.wait.side_effect=[subprocess.TimeoutExpired('worker',2),0]
+        process.poll.return_value=None
+        with patch('simple_rapidchiplet.hybrid.auto_runtime.os.name','nt'), \
+             patch('simple_rapidchiplet.hybrid.auto_runtime.subprocess.run',side_effect=subprocess.TimeoutExpired('taskkill',5)), \
+             patch.object(pool,'_stop_recorded_windows_worker',return_value=True) as verified:
+            pool.close()
+            verified.assert_called_once();process.kill.assert_called_once()
+        self.assertIsNone(pool.process)
+
+    @unittest.skipUnless(os.name=='nt','Windows venv launcher lifecycle')
+    def test_real_windows_launcher_fallback_stops_only_its_recorded_child(self):
+        from simple_rapidchiplet.hybrid.auto_runtime import BoundedOraclePool
+        with tempfile.TemporaryDirectory(dir=self.root) as directory:
+            folder=Path(directory);marker=folder/'worker_started.json'
+            code="import os,sys,json,time; from pathlib import Path; Path(sys.argv[1]).write_text(json.dumps(dict(worker_pid=os.getpid(),parent_pid=os.getppid()))); time.sleep(8)"
+            process=subprocess.Popen([sys.executable,'-c',code,str(marker)],stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,
+                creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+            pool=object.__new__(BoundedOraclePool);pool.process=process;pool.folder=folder;pool.log=None
+            try:
+                deadline=time.monotonic()+5
+                while not marker.exists() and time.monotonic()<deadline:time.sleep(.01)
+                self.assertTrue(marker.exists())
+                with patch('simple_rapidchiplet.hybrid.auto_runtime.subprocess.run',side_effect=subprocess.TimeoutExpired('taskkill',5)):
+                    pool.close()
+                self.assertIsNotNone(process.poll())
+                self.assertIsNone(pool.process)
+            finally:
+                # The test helper is independently self-bounded to 8 seconds
+                # even if the fallback assertion fails.
+                process.wait(timeout=10)
 
 
 if __name__ == '__main__':

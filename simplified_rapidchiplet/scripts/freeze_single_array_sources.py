@@ -16,7 +16,7 @@ def main():
     if output.exists():
         raise ValueError('snapshot destination already exists; choose a new directory')
     files = list(root.glob('*.py')) + list(root.glob('requirements*.txt'))
-    for directory, patterns in (('simple_rapidchiplet', ('*.py',)), ('tests', ('*.py',)),
+    for directory, patterns in (('simple_rapidchiplet', ('*.py','*.cpp','*.h','*.dll','*.so','*.build.json')), ('tests', ('*.py',)),
                                 ('scripts', ('*.py',)), ('configs', ('*.json',)),
                                 ('gui', ('*.js', '*.html', '*.css'))):
         for pattern in patterns:

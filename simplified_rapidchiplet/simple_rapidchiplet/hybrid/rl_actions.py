@@ -464,7 +464,8 @@ def _realization_edits(workload, mapping, layer_ids, *, storage=False):
 def generate_candidates(workload, state, report, architecture_candidates, *, rng=None,
                         shortlist=48, random_quota=12, max_per_family=12,
                         proposal="composite", fusion_enabled=True, max_fusion_depth=4,
-                        tile_sizes=((8, 8), (16, 16)), excluded_state_hashes=(), budget_excluded_state_hashes=()):
+                        tile_sizes=((8, 8), (16, 16)), excluded_state_hashes=(), budget_excluded_state_hashes=(),
+                        search_space="joint", generator_guidance=True):
     """Return plans and three-stage proposal accounting, without oracle calls."""
     if proposal not in {"atomic", "guided_atomic", "composite"}:
         raise ValueError("proposal must be atomic, guided_atomic, or composite")
@@ -478,13 +479,17 @@ def generate_candidates(workload, state, report, architecture_candidates, *, rng
     candidates = _candidate_map(architecture_candidates)
     current = candidates[state.architecture_candidate_id]
     package = _package(current.hardware)
-    diagnosis = diagnose(state, report)
-    hotspot_owners, hotspot_flow_ids = _hotspot_storage_owners(workload, state, diagnosis)
+    diagnosis = diagnose(state, report if generator_guidance else {})
+    if not generator_guidance:
+        diagnosis["compute_targets"] = []
+        diagnosis["donor_candidates"] = []
+    hotspot_owners, hotspot_flow_ids = _hotspot_storage_owners(workload, state, diagnosis) if generator_guidance else ({}, ())
     diagnosis["hotspot_layer_ids"] = sorted(hotspot_owners)
     diagnosis["hotspot_flow_ids"] = sorted(hotspot_flow_ids)
     generic, guided = [], []
     stats = {"proposed": {}, "hard_rejected": {}, "deduplicated": 0, "shortlist_dropped": 0,
-             "proxy_evaluations": 0, "full_evaluations": 0, "diagnosis": diagnosis}
+             "proxy_evaluations": 0, "full_evaluations": 0, "diagnosis": diagnosis,
+             "structurally_legal_by_family": {}, "structurally_rejected_by_family": {}}
 
     def add(family, edits, targets=(), reason="generic exploration", sources=(), *, guide=False):
         row = make_action_plan(state, family, edits, targets=targets, reason=reason, sources=sources)
@@ -673,11 +678,24 @@ def generate_candidates(workload, state, report, architecture_candidates, *, rng
     def clean(rows):
         output, seen = [], set()
         for plan in rows:
+            from .search_space import check_transition
+            try:
+                check_transition(state, apply_transaction(workload, state, plan, candidates), search_space, plan)
+            except (ValueError, KeyError, IndexError, TypeError) as error:
+                rejected = stats["structurally_rejected_by_family"]
+                rejected[plan.family_id] = rejected.get(plan.family_id, 0) + 1
+                reason = str(error)
+                stats["hard_rejected"][reason] = stats["hard_rejected"].get(reason, 0) + 1
+                continue
             verdict = validate_plan(workload, state, plan, candidates)
             if not verdict["valid"]:
+                rejected = stats["structurally_rejected_by_family"]
+                rejected[plan.family_id] = rejected.get(plan.family_id, 0) + 1
                 reason = verdict["reason"]
                 stats["hard_rejected"][reason] = stats["hard_rejected"].get(reason, 0) + 1
                 continue
+            legal = stats["structurally_legal_by_family"]
+            legal[plan.family_id] = legal.get(plan.family_id, 0) + 1
             trial = apply_transaction(workload, state, plan, candidates)
             key = trial.fingerprint
             if key in budget_excluded_state_hashes:

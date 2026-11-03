@@ -1,0 +1,4 @@
+# Replaying the bundled workload/seed archives requires no model download.
+--extra-index-url https://download.pytorch.org/whl/cpu
+numpy==2.3.5
+torch==2.7.0+cpu

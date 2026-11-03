@@ -1,0 +1,23 @@
+{
+  "code": {
+    "path": "C:\\Users\\user\\Desktop\\rapidchiplet\\output\\uploads\\INMIN_v04_Code_20261103.zip",
+    "bytes": 1963264,
+    "files": 207,
+    "sha256": "929104e1dfcb05f9513469f7113e1e373cb639adea5044a057a4487ff93b4a72",
+    "crc_and_sha_verified": true
+  },
+  "evidence": {
+    "path": "output\\uploads\\INMIN_v04_Evidence_20261103.zip",
+    "bytes": 94351618,
+    "files": 4409,
+    "sha256": "15964446575796c88bfc165fddf966e84a84cd99a05dcfa317d49340bed7ff77",
+    "crc_and_sha_verified": true
+  },
+  "results": {
+    "path": "C:\\Users\\user\\Desktop\\rapidchiplet\\output\\uploads\\INMIN_v04_Results_20261103.zip",
+    "bytes": 2883390,
+    "files": 115,
+    "sha256": "0672288b95beec81fdf354cdc127a748714135210114a387d43704773c8df2bb",
+    "crc_and_sha_verified": true
+  }
+}
